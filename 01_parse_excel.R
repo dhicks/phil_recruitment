@@ -1,5 +1,6 @@
 library(tidyverse)
 library(readxl)
+library(zoo)
 
 # library(furrr)
 # plan(multiprocess, workers = 3)
@@ -38,10 +39,9 @@ major_long_file = '01_major_long.Rds'
 if (!file.exists(str_c(data_folder, major_long_file))) {
     increment_quarter = function (qtr) {
         case_when(qtr == '01' ~ '03',
-                  qtr == '03' ~ '10',
-                  # qtr == '03' ~ '05',
-                  # qtr == '05' ~ '10',
-                  # qtr == '07' ~ '10',
+                  qtr == '03' ~ '05',
+                  qtr == '05' ~ '07',
+                  qtr == '07' ~ '10',
                   qtr == '10' ~ '01')
     }
     increment_term = function (term) {
@@ -66,32 +66,47 @@ if (!file.exists(str_c(data_folder, major_long_file))) {
         }
     }
     
-    ## ~4 minutes
+    rel_terms = expand.grid(fct_inorder(str_c('YR', 1:10)), 
+                            fct_inorder(c('FALL', 'WINTER', 'SPRING', 
+                                          'SUMMER_I', 'SUMMER_II')), 
+                            major_term$E_PIDM, 
+                            stringsAsFactors = FALSE) %>% 
+        arrange(Var3, Var1, Var2) %>%
+        transmute(id = Var3, rel_year = Var1, quarter = Var2, 
+                  rel_term = str_c(Var1, Var2))
+    
+    ## Currently this takes ~1 min per 1k rows
     tic()
-    major_long = bind_cols(major_term[1:8], 
-                           ## YR2SPRING is missing -_-
-                           tibble(YR2SPRING = major_term$YR2WINTER), 
-                           major_term[9:ncol(major_term)]) %>%
+    major_long = major_term %>%
         select(id = E_PIDM, admit_term = ADMIT_TERM, 
                starts_with('YR')) %>%
-        # slice(2917:2917) %>%
+        # slice(1:5000) %>% 
+        ## If admit_term is June (-06), replace it w/ July (-07)
+        mutate(admit_term = str_replace(admit_term, '06$', '07')) %>%
+        ## Long format
         gather(key = rel_term, value = major, 
-               -id, -admit_term) %>% 
+               -id, -admit_term) %>%
+        ## Full join to add rows for missing terms
+        full_join(rel_terms) %>%
+        arrange(id, rel_year, quarter) %>% 
+        ## Identify first and last terms with non-NA values
         group_by(id) %>%
-        ## If admit_term is in summer (-05, -06, -07), replace it w/ fall
-        mutate(admit_term = str_replace(admit_term, 
-                                        '0[567]$', 
-                                        '10')) %>%
-        ## Identify first and last term w/ non-NA values
-        mutate(increments = row_number() - 1, 
-               first_term = min(increments[!is.na(major)]),
-               last_term = max(increments[!is.na(major)])) %>% 
-        filter(increments <= last_term) %>% 
-        mutate(increments = increments - first_term) %>% 
-        filter(increments >= 0) %>% 
+        mutate(row_idx = row_number(),
+               first_term = min(row_idx[!is.na(major)]),
+               last_term = max(row_idx[!is.na(major)])) %>% 
+        filter(row_idx >= first_term, row_idx <= last_term) %>% 
+        ## Interpolate admit_term, major
+        ## NB this assumes major doesn't change until we see it change
+        mutate(admit_term = na.locf(admit_term),
+               major = na.locf(major), 
+               ## Reset row index so that 1. row has index 0
+               row_idx = row_idx - first_term) %>%
+        select(-first_term, -last_term) %>%
         ## Increment term label
+        ungroup() %>% 
         rowwise() %>% 
-        mutate(term = map2_chr(admit_term, increments, increment_recursively)) %>%
+        mutate(term = map2_chr(admit_term, row_idx, increment_recursively)) %>% 
+        # select(-admit_term, -rel_year, -quarter) %>%
         ## Majoring in philosophy?  
         group_by(id) %>%
         mutate(current_phil = str_detect(major, 'Philosophy')) %>%
@@ -192,16 +207,22 @@ crs_3 = crs_1 %>%
     mutate(n_phil = n()) %>%
     filter(term == first(term)) %>%
     ungroup() %>% 
-    select(id, course_id, n_phil) %>%
+    select(id, course_id, major, current_phil, n_phil) %>% 
     nest(course_id, .key = 'course_id')
-assert_that(nrow(crs_3) == nrow(profile))    
+assert_that(nrow(crs_3) == nrow(profile))
 
-## ~500 students (4%) take 2+ philosophy courses their first term
+## ~500 students (4%) take 2+ philosophy courses during the first term they take philosophy
 crs_3 %>%
     unnest() %>%
     count(id) %>% 
     count(n) %>%
     mutate(frac = nn / sum(nn))
+
+## ~266 students (1.6%) have already declared a major in philosophy
+## 1300 (8%) have missing major data during the term they first take philosophy
+crs_3 %>%
+    count(current_phil) %>%
+    mutate(frac = n / sum(n))
 
 ## Combine
 crs_clean = full_join(crs_1, crs_2)

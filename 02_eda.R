@@ -71,9 +71,12 @@ major_term %>%
 ## This is probably the dataset we'll use to build the models
 analysis_df = profile_df %>%
     filter(!phil_at_first_phil, gender != 'N') %>% 
+    mutate(gender = fct_relevel(gender, 'M'), 
+           race = fct_relevel(race, 'White')) %>%
     unnest() %>%
     left_join(crs_df, by = c('id', 'course_id'), 
-              suffix = c('', '.class'))
+              suffix = c('', '.class')) %>%
+    filter(!is.na(grade))
 
 count(analysis_df, n_first_phil)    
 skim(analysis_df)
@@ -108,11 +111,13 @@ major_term %>%
 ## - But the ends are in line with the trends seen across the middle of the study period
 ## - Except women_share and n_students; but the changes in trends mostly happen in the middle of the study period
 ## Qualitatively similar btwn analysis_df and crs_df
-crs_covars = crs_df %>% #analysis_df %>%
+crs_covars = analysis_df %>%
     select(course_id, year, term, 
            n_students, mean_grade, mean_cum_gpa, 
            women_share, poc_share, 
-           first_gen_share, low_income_share) %>%
+           first_gen_share, low_income_share, 
+           ever_phil, multiple_phil, n_later_phil
+           ) %>%
     gather(key = covariate, value = value, 
            -course_id, -year, -term)
 ggplot(crs_covars, aes(year, value)) +
@@ -160,26 +165,72 @@ ggplot(cors_long, aes(Var1, Var2, fill = cor)) +
 
 
 ## Rough cut regressions ----
-profile_df %>%
-    filter(!phil_at_first_phil) %>%
-    mutate(gender = fct_relevel(gender, 'M'), 
-           race = fct_relevel(race, 'White')) %>%
-    glm(ever_phil ~ gender + race + first_gen + low_income + admission_type, 
-       data = ., 
-       family = binomial)
-
-profile_df %>%
-    filter(!phil_at_first_phil) %>%
-    mutate(gender = fct_relevel(gender, 'M'), 
-           race = fct_relevel(race, 'White')) %>%
-    unnest() %>%
-    left_join(crs_df, by = c('id', 'course_id'), 
-              suffix = c('', '.class')) %>%
-    mutate(grade_diff = term_cum_gpa - grade) %>%
-    glm(ever_phil ~ gender + race + first_gen + low_income + admission_type + 
-            grade + grade_diff +
-            n_students + mean_grade + mean_cum_gpa + 
-            women_share + poc_share + first_gen_share + low_income_share, 
-        data = ., 
-        family = binomial) %>%
+library(lme4)
+library(broom)
+glmer(ever_phil ~ gender + race + first_gen + low_income + admission_type + (1|year), 
+       data = analysis_df, 
+       family = binomial) %>%
     summary()
+
+
+model = analysis_df %>%
+    mutate(grade_diff = term_cum_gpa - grade) %>%
+    mutate_at(vars(matches('share')), funs(.*10)) %>%
+    glm(ever_phil ~ gender*women_share + race*poc_share + first_gen*first_gen_share + low_income*low_income_share + 
+            admission_type + 
+            term_cum_gpa + grade_diff +
+            n_students + mean_grade + mean_cum_gpa,# + (1|year), 
+        data = ., 
+        family = binomial)
+
+summary(model)
+
+## Interaction plots
+model = glm(ever_phil ~ gender*women_share, data = analysis_df, family = binomial)
+
+## This gives exactly what we want to plot, but requires a full newdata df
+augment(model, newdata = expand.grid(gender = c('M', 'F'), women_share = .01*0:100), type.predict = 'link') %>%
+    mutate(.conf.low = .fitted + .se.fit*qnorm(.025), 
+           .conf.high = .fitted + .se.fit*qnorm(.975)) %>%
+    # mutate_at(vars(matches('\\.')), boot::inv.logit) %>%
+    # mutate_at(vars(matches('\\.')), exp) %>%
+    ggplot(aes(women_share, .fitted, color = gender, fill = gender)) +
+    geom_line() +
+    geom_ribbon(aes(ymin = .conf.low, ymax = .conf.high), alpha = .5)
+
+## This plots fitted values for each individual point, then a kind of second-order lm
+## This is much more convenient; but ribbons don't reflect uncertainty in first-order models
+## Inspired by <https://sakaluk.wordpress.com/2015/08/27/6-make-it-pretty-plotting-2-way-interactions-with-ggplot2/>
+augment(model) %>%
+    ggplot(aes(women_share, .fitted, color = gender)) +
+    geom_point(aes(alpha = ever_phil)) +
+    geom_smooth(method = 'lm') +
+    scale_alpha_discrete(range = c(.05, 1)) +
+    theme_minimal()
+    
+augment(model) %>%
+    ggplot(aes(poc_share, .fitted, color = race)) +
+    geom_point(aes(alpha = ever_phil)) +
+    geom_smooth(method = 'lm') +
+    theme_minimal() +
+    facet_wrap(~ race)
+
+augment(model) %>%
+    ggplot(aes(grade_diff, .fitted)) +
+    geom_point(alpha = .1) +
+    geom_smooth(method = 'lm') +
+    theme_minimal()
+
+effects_plot = function(model, covar, group, alpha = ever_phil) {
+    covar = enquo(covar)
+    group = enquo(group)
+    alpha = enquo(alpha)
+    
+    augment(model) %>%
+        ggplot(aes(!!covar, .fitted, color = !!group)) +
+        geom_point(aes(alpha = !!alpha)) +
+        scale_alpha_discrete(range = c(.05, 1)) +
+        geom_smooth(method = 'lm', se = FALSE)
+}
+effects_plot(model, women_share, gender)
+effects_plot(model, poc_share, race) + facet_wrap(~ race)

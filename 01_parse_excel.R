@@ -1,3 +1,11 @@
+#' This file parses the Excel file from the registrar's office, constructing 3 data files:  
+#' - `crs.Rds`:  Records for each student-CRS combination, including
+#'     - student's major at term of course
+#'     - instructor name
+#'     - course-level statistics, such as number of students and share of various minority categories
+#' - `profile.Rds`:  Demographics for each student, including gender, race-ethnicity, whether they ever majored in philosophy, number of philosophy courses taken, major at the term where they first took philosophy, and CRNs for their first philosophy courses
+#' - `major_long.Rds`: Student majors at each term, including summer session.  These data are incorporated into `crs` and `profile`, and may not need to be loaded separately.  
+
 library(tidyverse)
 library(readxl)
 library(zoo)
@@ -57,6 +65,8 @@ if (!file.exists(str_c(data_folder, major_long_file))) {
         }
         return(str_c(new_year, new_qtr))
     }
+    
+    
     increment_recursively = function (term, n) {
         if (n == 0) {
             return(term)
@@ -200,15 +210,16 @@ crs_2 = crs_1 %>%
 ## These appear to be reading courses
 # summarize_all(funs(empty = sum(is.na(.)))) %>% View
 
-## 3. round:  student-level CRS summaries
+## 3. round:  student-level CRS summaries, including major at first philosophy course
 crs_3 = crs_1 %>%
     arrange(id, year, quarter) %>%
     group_by(id) %>%
     mutate(n_phil = n()) %>%
     filter(term == first(term)) %>%
     ungroup() %>% 
-    select(id, course_id, major, current_phil, n_phil) %>% 
-    nest(course_id, .key = 'course_id')
+    select(id, course_id, major_at_first_phil = major, 
+           phil_at_first_phil = current_phil, n_phil) %>% 
+    nest(course_id, .key = 'first_phil_course')
 assert_that(nrow(crs_3) == nrow(profile))
 
 ## ~500 students (4%) take 2+ philosophy courses during the first term they take philosophy

@@ -21,7 +21,9 @@ data_file = 'Request 4681.xlsx'
 ## Load data ----
 profile = read_excel(str_c(data_folder, data_file), 
                      'Profile') %>%
+    ## These calculated various either contain errors, don't have a clear meaning, or are mostly missing
     select(-IsPHI_MAJOR, -PHI_CNT, -IsPHI_MINOR) %>%
+    ## A few students have two entries, with different values of IsPHI_MAJOR
     filter(!duplicated(.))
 
 ## Previous code to filter out repeated student IDs
@@ -32,6 +34,8 @@ profile = read_excel(str_c(data_folder, data_file),
 #     filter(IsPHI_MAJOR == 'N') %>%
 #     select(ID, IsPHI_MAJOR)
 # profile = anti_join(profile_unfltd, repeats)
+
+## 1 row per student
 assert_that(length(unique(profile$ID)) == nrow(profile))
 
 phi_crs = read_excel(str_c(data_folder, data_file), 'PHI_CRS')
@@ -43,8 +47,15 @@ assert_that(nrow(major_term) == nrow(profile))
 
 
 ## Major by term ----
+#' The dataset provides major data in an awkward format:  Each student is represented by a single row.  The column ADMIT_TERM identifies the term the student began at Davis.  Then a series of columns give the student's major.  These columns are formatted as "relative terms," eg, YR3SPRING.  There are no columns for summer sessions, and the YR2SPRING column is missing.  
+#' 
+#' This means cleaning the major data involves 3 transformations:  lengthening the dataset (1 row = 1 quarter); interpolating majors for missing terms; and converting relative terms to absolute terms, eg, 200601.  In addition, because students can be admitted during any quarter and often have missing data for intermediate quarters (perhaps because they were on leave?), we can't simply filter out missing values.  
+#' 
+#' The following block first defines a set of functions used for incrementing absolute terms — eg, 200601 -> 200603 and 201010 -> 201101 — and then generating a list of incremented terms of a given length starting from the student's admit_term.  rel_term contains a full list of relative terms, from YR1FALL through YR10SUMMER_II for each student.  abs_terms converts relative terms to absolute terms for each student.  Finally, major_long combines these resources following the 3 transformations above.  
 major_long_file = '01_major_long.Rds'
 if (!file.exists(str_c(data_folder, major_long_file))) {
+# if (TRUE) {
+    ## ~240 sec + time to write to disk
     increment_quarter = function (qtr) {
         case_when(qtr == '01' ~ '03',
                   qtr == '03' ~ '05',
@@ -53,27 +64,31 @@ if (!file.exists(str_c(data_folder, major_long_file))) {
                   qtr == '10' ~ '01')
     }
     increment_term = function (term) {
-        year = str_trunc(term, 4, ellipsis = '')
-        qtr = str_trunc(term, 2, side = 'left', ellipsis = '')
-        
-        new_qtr = increment_quarter(qtr)
+        new_qtr = increment_quarter(term$qtr)
         if (is.na(new_qtr)) stop(str_c('Bad term ', term))
-        if (qtr == '10') {
-            new_year = as.character(as.integer(year) + 1)
+        if (term$qtr == '10') {
+            new_year = as.character(as.integer(term$year) + 1)
         } else {
-            new_year = year
+            new_year = term$year
         }
-        return(str_c(new_year, new_qtr))
+        return(list(year = new_year, qtr = new_qtr))
     }
     
-    
-    increment_recursively = function (term, n) {
-        if (n == 0) {
-            return(term)
-        } else {
-            new_term = increment_recursively(term, n - 1)
-            return(increment_term(new_term))
+    generate_terms = function(admit_term, total_terms = 5*10) {
+        admit_year = str_trunc(admit_term, 4, ellipsis = '')
+        admit_qtr = str_trunc(admit_term, 2, ellipsis = '', side = 'left')
+        ## Fix admit quarter == 06
+        # admit_qtr = ifelse(admit_qtr == '06', '07', admit_qtr)
+        admit_term = list(year = admit_year, qtr = admit_qtr)
+        
+        terms = vector('list', total_terms)
+        terms[[1]] = admit_term
+        for (i in 2:total_terms) {
+            terms[[i]] = increment_term(terms[[i-1]])
         }
+        # return(terms)
+        terms_parsed = map_chr(terms, ~ str_c(.$year, .$qtr))
+        return(terms_parsed)
     }
     
     rel_terms = expand.grid(fct_inorder(str_c('YR', 1:10)), 
@@ -85,42 +100,61 @@ if (!file.exists(str_c(data_folder, major_long_file))) {
         transmute(id = Var3, rel_year = Var1, quarter = Var2, 
                   rel_term = str_c(Var1, Var2))
     
-    ## Currently this takes ~1 min per 1k rows
+    # test_students = major_term %>%
+    #     slice(1:1000) %>%
+    #     pull(E_PIDM)
+    
     tic()
-    major_long = major_term %>%
-        select(id = E_PIDM, admit_term = ADMIT_TERM, 
-               starts_with('YR')) %>%
-        # slice(1:5000) %>% 
+    abs_terms = major_term %>%
+        select(id = E_PIDM, admit_term = ADMIT_TERM) %>%
+        # filter(id %in% test_students) %>%
         ## If admit_term is June (-06), replace it w/ July (-07)
         mutate(admit_term = str_replace(admit_term, '06$', '07')) %>%
-        ## Long format
-        gather(key = rel_term, value = major, 
-               -id, -admit_term) %>%
-        ## Full join to add rows for missing terms
-        full_join(rel_terms) %>%
-        arrange(id, rel_year, quarter) %>% 
-        ## Identify first and last terms with non-NA values
+        ## Generate df of terms
+        rowwise() %>%
+        mutate(abs_term = list(generate_terms(admit_term))) %>%
+        ungroup() %>%
+        unnest() %>%
+        arrange(id, abs_term) %>%
         group_by(id) %>%
-        mutate(row_idx = row_number(),
-               first_term = min(row_idx[!is.na(major)]),
-               last_term = max(row_idx[!is.na(major)])) %>% 
-        filter(row_idx >= first_term, row_idx <= last_term) %>% 
-        ## Interpolate admit_term, major
-        ## NB this assumes major doesn't change until we see it change
-        mutate(admit_term = na.locf(admit_term),
-               major = na.locf(major), 
-               ## Reset row index so that 1. row has index 0
-               row_idx = row_idx - first_term) %>%
-        select(-first_term, -last_term) %>%
-        ## Increment term label
+        mutate(term_idx = row_number())
+    
+    major_long = major_term %>%
+        select(id = E_PIDM, admit_term = ADMIT_TERM, starts_with('YR')) %>%
+        # filter(id %in% test_students) %>%
+        ## If admit_term is June (-06), replace it w/ July (-07)
+        mutate(admit_term = str_replace(admit_term, '06$', '07')) %>%
+        ## Lengthen
+        gather(key = rel_term, value = major, starts_with('YR')) %>%
+        ## Interpolate missing relative terms
+        full_join(rel_terms, by = c('id', 'rel_term')) %>%
+        # filter(id %in% test_students) %>%
+        arrange(id, rel_year, quarter) %>%
+        ## Propagate admit_term and major
+        group_by(id) %>%
+        mutate(admit_term = na.locf(admit_term), 
+               major = na.locf(major, na.rm = FALSE)) %>%
+        ## Parse admit_term, filter, use this to construct term_idx
+        mutate(first_qtr = str_trunc(admit_term, 2, ellipsis = '', side = 'left'),
+               first_qtr = case_when(first_qtr == '10' ~ 'FALL', 
+                                     first_qtr == '01' ~ 'WINTER', 
+                                     first_qtr == '03' ~ 'SPRING', 
+                                     first_qtr == '05' ~ 'SUMMER_I', 
+                                     first_qtr == '07' ~ 'SUMMER_II'), 
+               first_term = str_c('YR1', first_qtr)) %>% 
+        ## Temporary index used to remove pre-admit terms
+        mutate(temp_idx = row_number()) %>%
+        filter(temp_idx >= temp_idx[rel_term == first_term]) %>% 
+        select(-temp_idx) %>%
+        ## Term index, used for joining to abs_terms
+        mutate(term_idx = row_number()) %>%
         ungroup() %>% 
-        rowwise() %>% 
-        mutate(term = map2_chr(admit_term, row_idx, increment_recursively)) %>% 
-        # select(-admit_term, -rel_year, -quarter) %>%
-        ## Majoring in philosophy?  
-        group_by(id) %>%
-        mutate(current_phil = str_detect(major, 'Philosophy')) %>%
-        ungroup()
+        ## Absolute terms
+        left_join(abs_terms) %>% 
+        ## Clean up
+        select(id, admit_term, rel_term, term = abs_term, major) %>%
+        ## Majoring in philosophy in a given term?  
+        mutate(current_phil = str_detect(major, 'Philosophy'))
     toc()
     
     write_rds(major_long, str_c(data_folder, major_long_file))
@@ -128,6 +162,11 @@ if (!file.exists(str_c(data_folder, major_long_file))) {
     major_long = read_rds(str_c(data_folder, major_long_file))
 }
 
+## Minimum number of term per student should be 9 years x 5 terms/yr + 1 (admitted in Summer II)
+# count(major_long, id) %>% arrange(n)
+assert_that(min(count(major_long, id)$n) >= 9*5+1)
+## Should have same number of students as profile
+assert_that(nrow(count(major_long, id)) == nrow(profile))
 
 
 ## Student profiles ----

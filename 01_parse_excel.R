@@ -268,11 +268,21 @@ crs_3 %>%
     count(n) %>%
     mutate(frac = nn / sum(nn))
 
-## ~266 students (1.6%) have already declared a major in philosophy
-## 1300 (8%) have missing major data during the term they first take philosophy
+## 279 students (1.7%) have already declared a major in philosophy when they take their first course
+## 9 have missing major data during the term they first take philosophy
 crs_3 %>%
-    count(current_phil) %>%
+    count(phil_at_first_phil) %>%
     mutate(frac = n / sum(n))
+
+## In each of these 9 cases, they took their first philosophy course before they were formally admitted
+filter(crs_3, is.na(phil_at_first_phil)) %>%
+    unnest() %>%
+    left_join(major_long) %>% 
+    group_by(id) %>%
+    filter(term == first(term)) %>%
+    mutate(first_phil_term = str_trunc(course_id, 6, ellipsis = ''), 
+           first_phil_before_admit = first_phil_term < admit_term) %>%
+    pull(first_phil_before_admit) %>% all() %>% assert_that(msg = 'Not all NAs have 1. phil before admit')
 
 ## Combine
 crs_clean = full_join(crs_1, crs_2)

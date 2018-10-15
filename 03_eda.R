@@ -132,7 +132,7 @@ ggplot(crs_covars, aes(year, value)) +
 ## 74 distinct instructors
 count(analysis_df, instructor) %>%
     arrange(desc(n)) %>%
-    write_csv(str_c(data_folder, '02_instructors.csv'))
+    write_csv(str_c(data_folder, '03_instructors.csv'))
 
 analysis_df %>%
     select(instructor, matches('share')) %>%

@@ -1,23 +1,51 @@
+## TODO: constructing crs_df in 01
+## - don't include Other in POC
+
 library(tidyverse)
+library(lubridate)
 
 library(skimr)
 library(tictoc)
 library(assertthat)
 
 data_folder = '/Volumes/DSI_SECURE/phil_recruitment/'
+insecure_data_folder = '../data_insecure/'
 
 ## Load data ----
 profile_df = read_rds(str_c(data_folder, '01_profile.Rds')) %>%
     mutate(n_first_phil = map_int(first_phil_course, nrow), 
            n_later_phil = n_phil - n_first_phil) %>%
     mutate_at(vars(ethnicity, ethnicity_code), fct_explicit_na) %>%
-    mutate_at(vars(admission_type, gender, major_at_first_phil, race), as_factor) %>%
-    mutate(multiple_phil = n_later_phil >= 1)
+    mutate_at(vars(admission_type, gender, 
+                   major_at_first_phil, race), 
+              as_factor) %>%
+    mutate(multiple_phil = n_later_phil >= 1, 
+           humdev_at_first_phil = str_detect(major_at_first_phil, 
+                                             'Human Development'))
 crs_df = read_rds(str_c(data_folder, '01_crs.Rds')) %>%
     mutate_at(vars(major), fct_explicit_na) %>%
-    mutate_at(vars(instructor), as_factor)
+    mutate_at(vars(instructor), as_factor) %>%
+    mutate(term_posix = parse_date_time2(term, 'Ym'))
 major_term = read_rds(str_c(data_folder, '01_major_long.Rds'))
 
+trends = read_rds(str_c(insecure_data_folder, '02_trends.Rds'))
+## Reconcile trends data w/ profile_df
+trends_gender = trends$gender %>%
+    mutate(gender = fct_recode(gender, 
+                               'F' = 'Female', 
+                               'M' = 'Male',
+                               NULL = 'Unknown'), 
+           term_posix = parse_date_time2(term, 'Ym'))
+## NB In profile_df, Indigenous people and PI are included in Other
+trends_race = trends$race %>%
+    mutate(race = fct_recode(race, 
+                             'Asian' = 'Asian-PI', 
+                             'Black' = 'African American', 
+                             'Hispanic' = 'Chicano-Latino', 
+                             'Other' = 'Other/Unknown', 
+                             'Other' = 'Native American',
+                             'White' = 'White'), 
+           term_posix = parse_date_time2(term, 'Ym'))
 
 ## skimr ----
 skim(profile_df)
@@ -63,6 +91,34 @@ major_term %>%
     # count(term) %>%
     ggplot(aes(term, group = 1L)) + 
     stat_count(geom = 'line')
+
+
+## Comparison of philosophy to campus-wide demographic trends
+## At course level
+crs_df %>%
+    mutate(term_posix = parse_date_time2(term, 'Ym')) %>%
+    ggplot(aes(term_posix, women_share)) +
+    # geom_jitter(alpha = .01) +
+    stat_summary(geom = 'line', aes(color = 'philosophy')) +
+    geom_line(data = filter(trends_gender, 
+                            gender == 'F', 
+                            year >= 2005, year <= 2015),
+              aes(y = frac, color = 'campus-wide')) +
+    theme_minimal()
+
+crs_df %>%
+    mutate(term_posix = parse_date_time2(term, 'Ym')) %>%
+    ggplot(aes(term_posix, poc_share)) +
+    stat_summary(geom = 'line', aes(color = 'philosophy')) +
+    stat_summary(data = filter(trends_race, 
+                               race != 'White', 
+                               year >= 2005, year <= 2015), 
+                 aes(y = frac, color = 'campus-wide'), 
+                 fun.y = sum, 
+                 geom = 'line') +
+    theme_minimal()
+
+## At first philosophy student level
 
 
 
@@ -155,7 +211,8 @@ cors_long = analysis_df %>%
 
 cors_long %>%
     filter(Var1 > Var2) %>%
-    filter(abs(cor) > .8)
+    filter(abs(cor) > .8) %>%
+    arrange(desc(abs(cor)))
 
 ggplot(cors_long, aes(Var1, Var2, fill = cor)) +
     geom_tile() +
@@ -177,6 +234,8 @@ model = analysis_df %>%
     mutate(grade_diff = term_cum_gpa - grade) %>%
     mutate_at(vars(matches('share')), funs(.*10)) %>%
     glm(ever_phil ~ gender*women_share + race*poc_share + first_gen*first_gen_share + low_income*low_income_share + 
+            human_dev.student + bio_sci.student + soc.student + undeclared.student + 
+            human_dev_share + bio_sci_share + soc_share + undeclared_share + current_phil_share +
             admission_type + 
             term_cum_gpa + grade_diff +
             n_students + mean_grade + mean_cum_gpa,# + (1|year), 
@@ -201,25 +260,25 @@ augment(model, newdata = expand.grid(gender = c('M', 'F'), women_share = .01*0:1
 ## This plots fitted values for each individual point, then a kind of second-order lm
 ## This is much more convenient; but ribbons don't reflect uncertainty in first-order models
 ## Inspired by <https://sakaluk.wordpress.com/2015/08/27/6-make-it-pretty-plotting-2-way-interactions-with-ggplot2/>
-augment(model) %>%
-    ggplot(aes(women_share, .fitted, color = gender)) +
-    geom_point(aes(alpha = ever_phil)) +
-    geom_smooth(method = 'lm') +
-    scale_alpha_discrete(range = c(.05, 1)) +
-    theme_minimal()
-    
-augment(model) %>%
-    ggplot(aes(poc_share, .fitted, color = race)) +
-    geom_point(aes(alpha = ever_phil)) +
-    geom_smooth(method = 'lm') +
-    theme_minimal() +
-    facet_wrap(~ race)
-
-augment(model) %>%
-    ggplot(aes(grade_diff, .fitted)) +
-    geom_point(alpha = .1) +
-    geom_smooth(method = 'lm') +
-    theme_minimal()
+# augment(model) %>%
+#     ggplot(aes(women_share, .fitted, color = gender)) +
+#     geom_point(aes(alpha = ever_phil)) +
+#     geom_smooth(method = 'lm') +
+#     scale_alpha_discrete(range = c(.05, 1)) +
+#     theme_minimal()
+#     
+# augment(model) %>%
+#     ggplot(aes(poc_share, .fitted, color = race)) +
+#     geom_point(aes(alpha = ever_phil)) +
+#     geom_smooth(method = 'lm') +
+#     theme_minimal() +
+#     facet_wrap(~ race)
+# 
+# augment(model) %>%
+#     ggplot(aes(grade_diff, .fitted)) +
+#     geom_point(alpha = .1) +
+#     geom_smooth(method = 'lm') +
+#     theme_minimal()
 
 effects_plot = function(model, covar, group, alpha = ever_phil) {
     covar = enquo(covar)
@@ -232,5 +291,9 @@ effects_plot = function(model, covar, group, alpha = ever_phil) {
         scale_alpha_discrete(range = c(.05, 1)) +
         geom_smooth(method = 'lm', se = FALSE)
 }
-effects_plot(model, women_share, gender)
-effects_plot(model, poc_share, race) + facet_wrap(~ race)
+effects_plot(model, 10*women_share, gender) + 
+    xlab('% women share') + 
+    theme_minimal()
+effects_plot(model, 10*first_gen_share, first_gen)
+
+effects_plot(model, 10*poc_share, race) + facet_wrap(~ race)

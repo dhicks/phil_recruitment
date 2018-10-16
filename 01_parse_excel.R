@@ -153,14 +153,20 @@ if (!file.exists(str_c(data_folder, major_long_file))) {
         left_join(abs_terms) %>% 
         ## Clean up
         select(id, admit_term, rel_term, term = abs_term, major) %>%
-        ## Majoring in philosophy in a given term?  
-        mutate(current_phil = str_detect(major, 'Philosophy'))
+        ## Write to disk
+        write_rds(str_c(data_folder, major_long_file))
     toc()
-    
-    write_rds(major_long, str_c(data_folder, major_long_file))
 } else {
     major_long = read_rds(str_c(data_folder, major_long_file))
 }
+major_long = major_long %>%
+    ## Dummies for major status that might influence decision to major in philosophy
+    ## Human Development, Biological Sciences, and Sociology have philosophy in AB/BS reqs
+    mutate(current_phil = str_detect(major, 'Philosophy'), 
+           human_dev = str_detect(major, 'Human Development'), 
+           bio_sci = str_detect(major, 'Biological Sciences'),
+           soc = str_detect(major, 'Sociology'),
+           undeclared = str_detect(major, 'Undeclared'))
 
 ## Minimum number of term per student should be 9 years x 5 terms/yr + 1 (admitted in Summer II)
 # count(major_long, id) %>% arrange(n)
@@ -226,7 +232,7 @@ crs_1 = phi_crs %>%
     rename_all(tolower) %>%
     ## Major at term
     left_join(major_long) %>% 
-    select(id:term_cum_gpa, major, current_phil) %>%
+    select(id:term_cum_gpa, major:undeclared) %>%
     ## Parse term into year and quarter
     separate(term, into = c('year', 'quarter'), sep = 4, 
              remove = FALSE, convert = TRUE)
@@ -241,8 +247,13 @@ crs_2 = crs_1 %>%
               women = sum(gender == 'F'), 
               poc = sum(race != 'White'), 
               first_gen = sum(first_gen), 
-              low_income = sum(low_income)) %>%
-    mutate_at(vars(women:low_income), 
+              low_income = sum(low_income), 
+              current_phil = sum(current_phil, na.rm = TRUE), 
+              human_dev = sum(human_dev, na.rm = TRUE), 
+              bio_sci = sum(bio_sci, na.rm = TRUE), 
+              soc = sum(soc, na.rm = TRUE), 
+              undeclared = sum(undeclared, na.rm = TRUE)) %>%
+    mutate_at(vars(women:undeclared), 
               funs(share = ./n_students)) #%>%
 # arrange(desc(n_students)) %>% 
 ## There are 56 courses where mean grade is empty
@@ -257,7 +268,9 @@ crs_3 = crs_1 %>%
     filter(term == first(term)) %>%
     ungroup() %>% 
     select(id, course_id, major_at_first_phil = major, 
-           phil_at_first_phil = current_phil, n_phil) %>% 
+           phil_at_first_phil = current_phil,
+           human_dev:undeclared,
+           n_phil) %>% 
     nest(course_id, .key = 'first_phil_course')
 assert_that(nrow(crs_3) == nrow(profile))
 
@@ -284,8 +297,13 @@ filter(crs_3, is.na(phil_at_first_phil)) %>%
            first_phil_before_admit = first_phil_term < admit_term) %>%
     pull(first_phil_before_admit) %>% all() %>% assert_that(msg = 'Not all NAs have 1. phil before admit')
 
+## Most popular majors at first philosophy course
+## Note that Human Development, Biological Sciences, Soc show up in top 10
+count(crs_3, major_at_first_phil) %>%
+    arrange(desc(n))
+
 ## Combine
-crs_clean = full_join(crs_1, crs_2)
+crs_clean = full_join(crs_1, crs_2, by = 'course_id', suffix = c('.student', '.course'))
 assert_that(nrow(crs_clean) == nrow(phi_crs))
 
 

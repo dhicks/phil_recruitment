@@ -1,5 +1,4 @@
-## TODO: constructing crs_df in 01
-## - don't include Other in POC
+## TODO: try this for effects plots:  <https://cran.r-project.org/web/packages/interplot/vignettes/interplot-vignette.html>
 
 library(tidyverse)
 library(lubridate)
@@ -43,7 +42,7 @@ trends_race = trends$race %>%
                              'Black' = 'African American', 
                              'Hispanic' = 'Chicano-Latino', 
                              'Other' = 'Other/Unknown', 
-                             'Other' = 'Native American',
+                             'Indigenous' = 'Native American',
                              'White' = 'White'), 
            term_posix = parse_date_time2(term, 'Ym'))
 
@@ -111,7 +110,7 @@ crs_df %>%
     ggplot(aes(term_posix, poc_share)) +
     stat_summary(geom = 'line', aes(color = 'philosophy')) +
     stat_summary(data = filter(trends_race, 
-                               race != 'White', 
+                               ! race %in% c('White', 'Other'), 
                                year >= 2005, year <= 2015), 
                  aes(y = frac, color = 'campus-wide'), 
                  fun.y = sum, 

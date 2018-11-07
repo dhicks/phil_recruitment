@@ -191,7 +191,13 @@ profile_clean = profile %>%
            low_income = islowincome) %>%
     ## Replace Y/N w/ logicals
     mutate(first_gen = first_gen == 'Y', 
-           low_income = low_income == 'Y')
+           low_income = low_income == 'Y') %>%
+    ## Move "American Indian/Alaska Native" and "Pacific Islander. other" ethnicities to an "Indigenous" race
+    ## Then collapse all remaining "Other" ethnicities
+    mutate(race = case_when(str_detect(ethnicity, 'Native|Islander') ~ 'Indigenous', 
+                         TRUE ~ race), 
+           ethnicity = ifelse(race == 'Other', 'Other', ethnicity), 
+           poc = ! race %in% c('White', 'Other'))
 
 ## CRS ----
 ## Grade points
@@ -245,7 +251,7 @@ crs_2 = crs_1 %>%
               mean_grade = mean(grade, na.rm = TRUE),
               mean_cum_gpa = mean(term_cum_gpa, na.rm = TRUE),
               women = sum(gender == 'F'), 
-              poc = sum(race != 'White'), 
+              poc = sum(poc), 
               first_gen = sum(first_gen), 
               low_income = sum(low_income), 
               current_phil = sum(current_phil, na.rm = TRUE), 

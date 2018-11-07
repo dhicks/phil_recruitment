@@ -27,6 +27,7 @@ crs_df = read_rds(str_c(data_folder, '01_crs.Rds')) %>%
     mutate(term_posix = parse_date_time2(term, 'Ym'))
 major_term = read_rds(str_c(data_folder, '01_major_long.Rds'))
 
+## University-wide trends
 trends = read_rds(str_c(insecure_data_folder, '02_trends.Rds'))
 ## Reconcile trends data w/ profile_df
 trends_gender = trends$gender %>%
@@ -86,10 +87,22 @@ profile_df %>%
 
 ## How many majors in each term? 
 major_term %>%
-    filter(current_phil) %>%
+    filter(str_detect(major, 'Philosophy')) %>%
     # count(term) %>%
-    ggplot(aes(term, group = 1L)) + 
+    ggplot(aes(term, group = 1L)) +
     stat_count(geom = 'line')
+
+## Fraction of 1. philosophy students that ever major, by term
+profile_df %>%
+    unnest() %>%
+    left_join(crs_df, by = c('id', 'course_id')) %>%
+    select(id, ever_phil, term, term_posix, quarter) %>%
+    filter(!duplicated(.)) %>%
+    group_by(term, term_posix, quarter) %>%
+    summarize(ever_phil_share = mean(ever_phil)) %>%
+    ggplot(aes(term_posix, ever_phil_share)) +
+    geom_line() +
+    geom_point(aes(color = as.factor(quarter)))
 
 
 ## Comparison of philosophy to campus-wide demographic trends

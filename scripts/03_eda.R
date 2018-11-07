@@ -9,6 +9,9 @@ library(assertthat)
 
 data_folder = '/Volumes/DSI_SECURE/phil_recruitment/'
 insecure_data_folder = '../data_insecure/'
+plots_folder = '../plots/'
+
+theme_set(theme_minimal())
 
 ## Load data ----
 profile_df = read_rds(str_c(data_folder, '01_profile.Rds')) %>%
@@ -86,11 +89,72 @@ profile_df %>%
     skim()
 
 ## How many majors in each term? 
-major_term %>%
-    filter(str_detect(major, 'Philosophy')) %>%
-    # count(term) %>%
-    ggplot(aes(term, group = 1L)) +
-    stat_count(geom = 'line')
+## Because we don't know when they graduate, this isn't useful
+# major_term %>%
+#     filter(str_detect(major, 'Philosophy')) %>%
+#     # count(term) %>%
+#     ggplot(aes(term, group = 1L)) +
+#     stat_count(geom = 'line')
+
+
+## Some plots ----
+## Demographics
+## All students
+profile_df %>%
+    select(admission_type, gender, race, first_gen, low_income) %>%
+    gather(key = variable, value = value) %>%
+    count(variable, value) %>%
+    group_by(variable) %>%
+    mutate(share = n / sum(n)) %>%
+    ggplot(aes(value, share)) +
+    geom_col(aes(fill = variable), show.legend = FALSE) +
+    geom_text(aes(label = n), nudge_y = .05) +
+    facet_wrap(~ variable, scales = 'free')
+# ggsave(str_c(plots_folder, '03_demographics.png'), height = 3, width = 6, scale = 2)
+
+## Majors
+profile_df %>%
+    filter(ever_phil) %>%
+    select(admission_type, gender, race, first_gen, low_income) %>%
+    gather(key = variable, value = value) %>%
+    count(variable, value) %>%
+    group_by(variable) %>%
+    mutate(share = n / sum(n)) %>%
+    ggplot(aes(value, share)) +
+    geom_col(aes(fill = variable), show.legend = FALSE) +
+    geom_text(aes(label = n), nudge_y = .05) +
+    facet_wrap(~ variable, scales = 'free')
+
+## Combine these two
+demo_long = profile_df %>%
+    select(ever_phil, admission_type, gender, race, first_gen, low_income) %>%
+    gather(key = variable, value = value, -ever_phil) %>%
+    count(ever_phil, variable, value)
+demo_all = demo_long %>%
+    group_by(variable, value) %>%
+    summarize(n = sum(n)) %>%
+    mutate(share = n / sum(n), 
+           students = 'all') %>%
+    ungroup()
+demo_majors = demo_long %>%
+    filter(ever_phil) %>%
+    group_by(variable, value) %>%
+    summarize(n = sum(n)) %>%
+    mutate(share = n / sum(n), 
+           students = 'majors') %>%
+    ungroup()
+
+bind_rows(demo_all, demo_majors) %>%
+    ggplot(aes(value, share, color = students, group = students)) +
+    # geom_col(position = 'dodge') +
+    geom_segment(aes(xend = value, yend = 0), size = 1) +
+    geom_point(size = 2) +
+    geom_text(aes(label = n), nudge_y = .05, nudge_x = .25, show.legend = FALSE) +
+    facet_wrap(~ variable, scales = 'free')
+ggsave(str_c(plots_folder, '03_demographics.png'), height = 3, width = 6, scale = 2)
+
+    
+
 
 ## Fraction of 1. philosophy students that ever major, by term
 profile_df %>%
@@ -103,11 +167,14 @@ profile_df %>%
     ggplot(aes(term_posix, ever_phil_share)) +
     geom_line() +
     geom_point(aes(color = as.factor(quarter)))
+ggsave(str_c(plots_folder, '03_descriptive_share.png'), height = 3, width = 6)
 
 
 ## Comparison of philosophy to campus-wide demographic trends
 ## At course level
 crs_df %>%
+    select(term, course_id, women_share, poc_share) %>%
+    filter(!duplicated(.)) %>%
     mutate(term_posix = parse_date_time2(term, 'Ym')) %>%
     ggplot(aes(term_posix, women_share)) +
     # geom_jitter(alpha = .01) +
@@ -117,10 +184,14 @@ crs_df %>%
                             year >= 2005, year <= 2015),
               aes(y = frac, color = 'campus-wide')) +
     theme_minimal()
+ggsave(str_c(plots_folder, '03_women_trends.png'), height = 3, width = 6)
 
 crs_df %>%
+    select(term, course_id, women_share, poc_share) %>%
+    filter(!duplicated(.)) %>%
     mutate(term_posix = parse_date_time2(term, 'Ym')) %>%
     ggplot(aes(term_posix, poc_share)) +
+    # geom_point(aes(color = 'philosophy'), alpha = .05) +
     stat_summary(geom = 'line', aes(color = 'philosophy')) +
     stat_summary(data = filter(trends_race, 
                                ! race %in% c('White', 'Other'), 
@@ -129,9 +200,7 @@ crs_df %>%
                  fun.y = sum, 
                  geom = 'line') +
     theme_minimal()
-
-## At first philosophy student level
-
+ggsave(str_c(plots_folder, '03_poc_trends.png'), height = 3, width = 6)
 
 
 ## Analysis df ----

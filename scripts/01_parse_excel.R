@@ -194,9 +194,10 @@ profile_clean = profile %>%
            low_income = low_income == 'Y') %>%
     ## Move "American Indian/Alaska Native" and "Pacific Islander. other" ethnicities to an "Indigenous" race
     ## Then collapse all remaining "Other" ethnicities
-    mutate(race = case_when(str_detect(ethnicity, 'Native|Islander') ~ 'Indigenous', 
+    mutate(race = case_when(str_detect(ethnicity, 'Native') ~ 'Indigenous', 
+                            str_detect(ethnicity, 'Islander') ~ 'Pacific Islander',
                          TRUE ~ race), 
-           ethnicity = ifelse(race == 'Other', 'Other', ethnicity), 
+           ethnicity = ifelse(race == 'Other', 'Other', ethnicity),
            poc = ! race %in% c('White', 'Other'))
 
 ## CRS ----

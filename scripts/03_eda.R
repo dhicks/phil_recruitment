@@ -99,7 +99,8 @@ count(profile_df, gender, race, first_gen, low_income, admission_type) #%>% View
 count(profile_df, gender, poc, first_gen, low_income, admission_type) #%>% View('poc')
 
 ## More manageable if gender and race are the only demographic factors
-count(profile_df, gender, race)
+count(profile_clean, gender, race) %>% 
+    arrange(desc(n))
 
 ## Principal components doesn't help
 demo_pc = profile_df %>%
@@ -117,7 +118,7 @@ varimax(demo_pc$rotation[,1:3])
 crs_df %>%
     filter(is.na(grade)) %>%
     count(instructor) %>%
-    arrange(desc(n))
+    arrange(d)
 
 
 ## Some plots ----

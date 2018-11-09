@@ -49,6 +49,22 @@ trends_race = trends$race %>%
                              'White' = 'White'), 
            term_posix = parse_date_time2(term, 'Ym'))
 
+## Analysis df ----
+## Only first philosophy courses, students w/ binary gender ID
+## This is probably the dataset we'll use to build the models
+analysis_df = profile_df %>%
+    filter(gender != 'N') %>% 
+    mutate(gender = fct_relevel(gender, 'M'), 
+           race = fct_relevel(race, 'White')) %>%
+    unnest() %>%
+    left_join(crs_df, by = c('id', 'course_id'), 
+              suffix = c('', '.class')) %>%
+    filter(!is.na(grade))
+write_rds(analysis_df, str_c(data_folder, '03_analysis_df.Rds'))
+
+
+stop("Don't run EDA automatically")
+
 ## skimr ----
 skim(profile_df)
 
@@ -227,21 +243,9 @@ crs_df %>%
 ggsave(str_c(plots_folder, '03_poc_trends.png'), height = 3, width = 6)
 
 
-## Analysis df ----
-## Only first philosophy courses, students who aren't already majors, students w/ binary gender ID
-## This is probably the dataset we'll use to build the models
-analysis_df = profile_df %>%
-    filter(!phil_at_first_phil, gender != 'N') %>% 
-    mutate(gender = fct_relevel(gender, 'M'), 
-           race = fct_relevel(race, 'White')) %>%
-    unnest() %>%
-    left_join(crs_df, by = c('id', 'course_id'), 
-              suffix = c('', '.class')) %>%
-    filter(!is.na(grade))
-
+## EDA just w/ analysis df ----
 count(analysis_df, n_first_phil)    
 skim(analysis_df)
-
 ## Year seems suspiciously flat 
 ## It seems like we might be missing data from 2005 and 2006
 count(analysis_df, year)

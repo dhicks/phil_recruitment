@@ -14,10 +14,8 @@ dataf = read_rds(str_c(data_folder, '03_analysis_df.Rds'))
 
 
 ## Rough cut regressions ----
-library(lme4)
-library(broom)
-glmer(ever_phil ~ gender + race + first_gen + low_income + admission_type + (1|year), 
-      data = analysis_df, 
+glmer(ever_phil ~ 1 + (women_share + gender + race + first_gen + low_income + admission_type + (1|year), 
+      data = dataf, 
       family = binomial) %>%
     summary()
 

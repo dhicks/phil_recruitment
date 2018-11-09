@@ -36,7 +36,8 @@ major_term = read_rds(str_c(data_folder, '01_major_long.Rds'))
 analysis_df = profile_df %>%
     filter(gender != 'N') %>% 
     mutate(gender = fct_relevel(gender, 'M'), 
-           race = fct_relevel(race, 'White')) %>%
+           race = fct_relevel(race, 'White'), 
+           demographic = interaction(gender, race, drop = TRUE)) %>%
     unnest() %>%
     left_join(crs_df, by = c('id', 'course_id'), 
               suffix = c('', '.class')) %>%

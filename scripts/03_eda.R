@@ -39,7 +39,6 @@ trends_gender = trends$gender %>%
                                'M' = 'Male',
                                NULL = 'Unknown'), 
            term_posix = parse_date_time2(term, 'Ym'))
-## NB In profile_df, Indigenous people and PI are included in Other
 trends_race = trends$race %>%
     mutate(race = fct_recode(race, 
                              'Asian' = 'Asian-PI', 
@@ -71,7 +70,6 @@ profile_df %>%
     unnest()
 
 ## 275 students have the philosophy major at the term of their first philosophy course
-## **assuming these are majors at beginning of term** they should probably be dropped
 count(profile_df, phil_at_first_phil) %>%
     mutate(frac = n / sum(n))
 profile_df %>%
@@ -95,6 +93,31 @@ profile_df %>%
 #     # count(term) %>%
 #     ggplot(aes(term, group = 1L)) +
 #     stat_count(geom = 'line')
+
+## Intersection of demographics
+count(profile_df, gender, race, first_gen, low_income, admission_type) #%>% View('race')
+count(profile_df, gender, poc, first_gen, low_income, admission_type) #%>% View('poc')
+
+## More manageable if gender and race are the only demographic factors
+count(profile_df, gender, race)
+
+## Principal components doesn't help
+demo_pc = profile_df %>%
+    select(gender, poc, first_gen, low_income, admission_type) %>%
+    mutate_all(as.integer) %>%
+    prcomp()
+summary(demo_pc)
+plot(demo_pc)
+
+varimax(demo_pc$rotation)
+varimax(demo_pc$rotation[,1:4])
+varimax(demo_pc$rotation[,1:3])
+
+## Which instructors have missing grades? 
+crs_df %>%
+    filter(is.na(grade)) %>%
+    count(instructor) %>%
+    arrange(desc(n))
 
 
 ## Some plots ----

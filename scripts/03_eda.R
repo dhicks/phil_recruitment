@@ -30,7 +30,23 @@ crs_df = read_rds(str_c(data_folder, '01_crs.Rds')) %>%
     mutate(term_posix = parse_date_time2(term, 'Ym'))
 major_term = read_rds(str_c(data_folder, '01_major_long.Rds'))
 
-## University-wide trends
+## Analysis df ----
+## Only first philosophy courses, students w/ binary gender ID
+## This is probably the dataset we'll use to build the models
+analysis_df = profile_df %>%
+    filter(gender != 'N') %>% 
+    mutate(gender = fct_relevel(gender, 'M'), 
+           race = fct_relevel(race, 'White')) %>%
+    unnest() %>%
+    left_join(crs_df, by = c('id', 'course_id'), 
+              suffix = c('', '.class')) %>%
+    filter(!is.na(grade))
+write_rds(analysis_df, str_c(data_folder, '03_analysis_df.Rds'))
+
+
+stop("Don't run EDA automatically")
+
+## University-wide trends data ----
 trends = read_rds(str_c(insecure_data_folder, '02_trends.Rds'))
 ## Reconcile trends data w/ profile_df
 trends_gender = trends$gender %>%
@@ -49,21 +65,6 @@ trends_race = trends$race %>%
                              'White' = 'White'), 
            term_posix = parse_date_time2(term, 'Ym'))
 
-## Analysis df ----
-## Only first philosophy courses, students w/ binary gender ID
-## This is probably the dataset we'll use to build the models
-analysis_df = profile_df %>%
-    filter(gender != 'N') %>% 
-    mutate(gender = fct_relevel(gender, 'M'), 
-           race = fct_relevel(race, 'White')) %>%
-    unnest() %>%
-    left_join(crs_df, by = c('id', 'course_id'), 
-              suffix = c('', '.class')) %>%
-    filter(!is.na(grade))
-write_rds(analysis_df, str_c(data_folder, '03_analysis_df.Rds'))
-
-
-stop("Don't run EDA automatically")
 
 ## skimr ----
 skim(profile_df)

@@ -35,13 +35,23 @@ major_term = read_rds(str_c(data_folder, '01_major_long.Rds'))
 ## This is probably the dataset we'll use to build the models
 analysis_df = profile_df %>%
     filter(gender != 'N') %>% 
+    ## Demographic groups
     mutate(gender = fct_relevel(gender, 'M'), 
-           race = fct_relevel(race, 'White'), 
-           demographic = interaction(gender, race, drop = TRUE)) %>%
+           race4 = fct_collapse(race, 
+                               White = 'White', 
+                               Asian = 'Asian', 
+                               BHIP = c('Black', 'Hispanic', 'Indigenous', 'Pacific Islander'), 
+                               Other = 'Other'), 
+           race4 = fct_relevel(race4, 'White', 'Asian', 'BHIP', 'Other'), 
+           demographic = interaction(gender, race4, drop = TRUE)) %>%
     unnest() %>%
     left_join(crs_df, by = c('id', 'course_id'), 
               suffix = c('', '.class')) %>%
-    filter(!is.na(grade))
+    filter(!is.na(grade)) %>%
+    mutate(grade_diff = term_cum_gpa - grade, 
+           other_major_share = human_dev_share + bio_sci_share + soc_share,
+           year = as.factor(year), 
+           quarter = as.factor(quarter))
 write_rds(analysis_df, str_c(data_folder, '03_analysis_df.Rds'))
 
 

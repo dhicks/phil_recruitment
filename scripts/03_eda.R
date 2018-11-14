@@ -46,6 +46,7 @@ analysis_df = profile_df %>%
                                Other = 'Other'), 
            race4 = fct_relevel(race4, 'White', 'Asian', 'BHIP', 'Other'), 
            demographic = interaction(gender, race4, drop = TRUE)) %>%
+    filter(race4 != 'Other') %>%
     unnest() %>%
     left_join(crs_df, by = c('id', 'course_id'), 
               suffix = c('', '.class')) %>%

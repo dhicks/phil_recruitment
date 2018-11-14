@@ -1,4 +1,4 @@
-## TODO: try this for effects plots:  <https://cran.r-project.org/web/packages/interplot/vignettes/interplot-vignette.html>
+## This script (1) combines the data frames parsed or assembled in previous steps into a single analytical dataset, and (2) conducts exploratory data analysis on the data.  
 
 library(tidyverse)
 library(lubridate)
@@ -17,7 +17,8 @@ theme_set(theme_minimal())
 profile_df = read_rds(str_c(data_folder, '01_profile.Rds')) %>%
     mutate(n_first_phil = map_int(first_phil_course, nrow), 
            n_later_phil = n_phil - n_first_phil) %>%
-    mutate_at(vars(ethnicity, ethnicity_code), fct_explicit_na) %>%
+    mutate_at(vars(ethnicity, ethnicity_code), 
+              fct_explicit_na) %>%
     mutate_at(vars(admission_type, gender, 
                    major_at_first_phil, race), 
               as_factor) %>%
@@ -29,6 +30,7 @@ crs_df = read_rds(str_c(data_folder, '01_crs.Rds')) %>%
     mutate_at(vars(instructor), as_factor) %>%
     mutate(term_posix = parse_date_time2(term, 'Ym'))
 major_term = read_rds(str_c(data_folder, '01_major_long.Rds'))
+
 
 ## Analysis df ----
 ## Only first philosophy courses, students w/ binary gender ID
@@ -147,6 +149,18 @@ crs_df %>%
     filter(is.na(grade)) %>%
     count(instructor) %>%
     arrange(d)
+
+## Courses with the most 1. philosophy students
+profile_df %>%
+    unnest() %>%
+    left_join(crs_df, by = c('id', 'course_id')) %>%
+    group_by(title) %>%
+    summarize(n = n(), ever_phil = mean(ever_phil)) %>%
+    ungroup() %>%
+    ggplot(aes(n, ever_phil)) +
+    geom_point() +
+    geom_smooth(method = 'lm') +
+    scale_x_log10()
 
 
 ## Some plots ----

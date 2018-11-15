@@ -36,7 +36,7 @@ major_term = read_rds(str_c(data_folder, '01_major_long.Rds'))
 ## Only first philosophy courses, students w/ binary gender ID
 ## This is probably the dataset we'll use to build the models
 analysis_df = profile_df %>%
-    filter(gender != 'N') %>% 
+    filter(gender != 'N', !is.na(major_at_first_phil)) %>% 
     ## Demographic groups
     mutate(gender = fct_relevel(gender, 'M'), 
            race4 = fct_collapse(race, 
@@ -51,10 +51,13 @@ analysis_df = profile_df %>%
     left_join(crs_df, by = c('id', 'course_id'), 
               suffix = c('', '.class')) %>%
     filter(!is.na(grade)) %>%
+    rowwise() %>%
     mutate(grade_diff = term_cum_gpa - grade, 
+           other_major = any(human_dev, bio_sci, soc),
            other_major_share = human_dev_share + bio_sci_share + soc_share,
            year = as.factor(year), 
-           quarter = as.factor(quarter))
+           quarter = as.factor(quarter)) %>%
+    ungroup()
 write_rds(analysis_df, str_c(data_folder, '03_analysis_df.Rds'))
 
 

@@ -54,7 +54,7 @@ assert_that(nrow(major_term) == nrow(profile))
 #' The following block first defines a set of functions used for incrementing absolute terms — eg, 200601 -> 200603 and 201010 -> 201101 — and then generating a list of incremented terms of a given length starting from the student's admit_term.  rel_term contains a full list of relative terms, from YR1FALL through YR10SUMMER_II for each student.  abs_terms converts relative terms to absolute terms for each student.  Finally, major_long combines these resources following the 3 transformations above.  
 major_long_file = '01_major_long.Rds'
 if (!file.exists(str_c(data_folder, major_long_file))) {
-# if (TRUE) {
+    # if (TRUE) {
     ## ~240 sec + time to write to disk
     increment_quarter = function (qtr) {
         case_when(qtr == '01' ~ '03',
@@ -192,13 +192,23 @@ profile_clean = profile %>%
     ## Replace Y/N w/ logicals
     mutate(first_gen = first_gen == 'Y', 
            low_income = low_income == 'Y') %>%
-    ## Move "American Indian/Alaska Native" and "Pacific Islander. other" ethnicities to an "Indigenous" race
+    ## Move "American Indian/Alaska Native" and "Pacific Islander. other" ethnicities to distinct races
     ## Then collapse all remaining "Other" ethnicities
+    ## There are very few Black, Hispanic, Indigenous, and PI individuals, so we construct a 4-valued variable that groups these
+    ## And a race x gender analytical variable
     mutate(race = case_when(str_detect(ethnicity, 'Native') ~ 'Indigenous', 
                             str_detect(ethnicity, 'Islander') ~ 'Pacific Islander',
-                         TRUE ~ race), 
+                            TRUE ~ race), 
            ethnicity = ifelse(race == 'Other', 'Other', ethnicity),
-           poc = ! race %in% c('White', 'Other'))
+           poc = ! race %in% c('White', 'Other'),
+           race4 = fct_collapse(race, 
+                                White = 'White', 
+                                Asian = 'Asian', 
+                                BHIP = c('Black', 'Hispanic', 'Indigenous', 'Pacific Islander'), 
+                                Other = 'Other'), 
+           gender = fct_relevel(gender, 'M'),
+           race4 = fct_relevel(race4, 'White', 'Asian', 'BHIP', 'Other'), 
+           demographic = interaction(gender, race4, drop = TRUE))
 
 ## CRS ----
 ## Grade points
@@ -242,7 +252,11 @@ crs_1 = phi_crs %>%
     select(id:term_cum_gpa, major:undeclared) %>%
     ## Parse term into year and quarter
     separate(term, into = c('year', 'quarter'), sep = 4, 
-             remove = FALSE, convert = TRUE)
+             remove = FALSE, convert = TRUE) %>% 
+    ## GPA gap
+    mutate(grade_diff = term_cum_gpa - grade) %>% 
+    ## Control majors
+    mutate(other_major = human_dev|bio_sci|soc)
 
 ## 2. round:  course-level calculated variables
 crs_2 = crs_1 %>%
@@ -251,6 +265,7 @@ crs_2 = crs_1 %>%
     summarize(n_students = n(),
               mean_grade = mean(grade, na.rm = TRUE),
               mean_cum_gpa = mean(term_cum_gpa, na.rm = TRUE),
+              mean_grade_diff = mean(grade_diff, na.rm = TRUE),
               women = sum(gender == 'F'), 
               poc = sum(poc), 
               first_gen = sum(first_gen), 
@@ -259,6 +274,7 @@ crs_2 = crs_1 %>%
               human_dev = sum(human_dev, na.rm = TRUE), 
               bio_sci = sum(bio_sci, na.rm = TRUE), 
               soc = sum(soc, na.rm = TRUE), 
+              other_major = sum(other_major, na.rm = TRUE),
               undeclared = sum(undeclared, na.rm = TRUE)) %>%
     mutate_at(vars(women:undeclared), 
               funs(share = ./n_students)) #%>%
@@ -267,8 +283,48 @@ crs_2 = crs_1 %>%
 ## These appear to be reading courses
 # summarize_all(funs(empty = sum(is.na(.)))) %>% View
 
-## 3. round:  student-level CRS summaries, including major at first philosophy course
+## 3. round:  difference in mean GPA gap (DMG) across demographics
+## We use mean of mean gap across individual white men as the reference value
+## To reduce the effect of philosophy majors, we first average within students, and then across students
+ref_gpa_gap = crs_1 %>% 
+    left_join(profile_clean) %>% 
+    filter(demographic == 'M.White') %>% 
+    group_by(id) %>% 
+    summarize(grade_diff = mean(grade_diff)) %>% 
+    pull(grade_diff) %>% 
+    mean(na.rm = TRUE)
+
 crs_3 = crs_1 %>%
+    # filter(course_id %in% c('200701_56652', '200701_63653')) %>%
+    left_join(profile_clean) %>% 
+    group_by(course_id, demographic) %>% 
+    summarize(grade_diff = mean(grade_diff, na.rm = TRUE)) %>% 
+    ungroup() %>% 
+    spread(demographic, grade_diff) %>% 
+    mutate_if(is.numeric, 
+              funs(. - ref_gpa_gap)) %>% 
+    gather(demographic, dmg, -course_id, factor_key = TRUE) %>% 
+    filter(!is.na(dmg))
+
+## The variance in DMG is substantial, with sd's around .5 grade points or larger
+## Averaged across *courses* and ignoring Others, women are disadvantaged and white men are advantaged.  The effect is small, though, less than .1 grade points
+crs_3 %>%
+    group_by(demographic) %>%
+    summarize_at(vars(dmg), funs(mean, sd, n = n())) %>%
+    mutate(se = sd / sqrt(n),
+           ci.lo = mean + qnorm(.025)*se,
+           ci.hi = mean + qnorm(.975)*se) %>%
+    ggplot(aes(demographic, mean, color = n)) +
+    geom_pointrange(aes(ymin = ci.lo,
+                        ymax = ci.hi)) +
+    geom_hline(yintercept = 0) +
+    scale_color_viridis_c(trans = 'log10', direction = -1) +
+    coord_cartesian(ylim = c(-.2, .2))
+
+## This might seem paradoxical:  How can white men be advantaged relative to white men?  Averaging at the course level, a large diverse intro course counts the same as a small majors course of ~all white men.  
+
+## 4. round:  student-level CRS summaries, including major at first philosophy course
+crs_4 = crs_1 %>%
     arrange(id, year, quarter) %>%
     group_by(id) %>%
     mutate(n_phil = n()) %>%
@@ -279,10 +335,10 @@ crs_3 = crs_1 %>%
            human_dev:undeclared,
            n_phil) %>% 
     nest(course_id, .key = 'first_phil_course')
-assert_that(nrow(crs_3) == nrow(profile))
+assert_that(nrow(crs_4) == nrow(profile))
 
 ## ~500 students (4%) take 2+ philosophy courses during the first term they take philosophy
-crs_3 %>%
+crs_4 %>%
     unnest() %>%
     count(id) %>% 
     count(n) %>%
@@ -290,35 +346,40 @@ crs_3 %>%
 
 ## 279 students (1.7%) have already declared a major in philosophy when they take their first course
 ## 9 have missing major data during the term they first take philosophy
-crs_3 %>%
+crs_4 %>%
     count(phil_at_first_phil) %>%
     mutate(frac = n / sum(n))
 
 ## In each of these 9 cases, they took their first philosophy course before they were formally admitted
-filter(crs_3, is.na(phil_at_first_phil)) %>%
+filter(crs_4, is.na(phil_at_first_phil)) %>%
     unnest() %>%
     left_join(major_long) %>% 
     group_by(id) %>%
     filter(term == first(term)) %>%
     mutate(first_phil_term = str_trunc(course_id, 6, ellipsis = ''), 
            first_phil_before_admit = first_phil_term < admit_term) %>%
-    pull(first_phil_before_admit) %>% all() %>% assert_that(msg = 'Not all NAs have 1. phil before admit')
+    pull(first_phil_before_admit) %>% 
+    all() %>% 
+    assert_that(msg = 'Not all NAs have 1. phil before admit')
 
 ## Most popular majors at first philosophy course
 ## Note that Human Development, Biological Sciences, Soc show up in top 10
-count(crs_3, major_at_first_phil) %>%
+count(crs_4, major_at_first_phil) %>%
     arrange(desc(n))
 
 ## Combine
-crs_clean = full_join(crs_1, crs_2, by = 'course_id', suffix = c('.student', '.course'))
+crs_clean = full_join(crs_1, crs_2, 
+                      by = 'course_id', 
+                      suffix = c('.student', '.course'))
 assert_that(nrow(crs_clean) == nrow(phi_crs))
 
 
 ## Output ----
 profile_clean %>%
-    full_join(crs_3) %>%
+    full_join(crs_4) %>%
     write_rds(str_c(data_folder, '01_profile.Rds'))
 write_rds(crs_clean, str_c(data_folder, '01_crs.Rds'))
+write_rds(crs_3, str_c(data_folder, '01_dmg.Rds'))
 
 
 ## EDA/scratch ----

@@ -22,13 +22,12 @@ profile_df = read_rds(str_c(data_folder, '01_profile.Rds')) %>%
     mutate_at(vars(admission_type, gender, 
                    major_at_first_phil, race), 
               as_factor) %>%
-    mutate(multiple_phil = n_later_phil >= 1, 
-           humdev_at_first_phil = str_detect(major_at_first_phil, 
-                                             'Human Development'))
+    mutate(multiple_phil = n_later_phil >= 1)
 crs_df = read_rds(str_c(data_folder, '01_crs.Rds')) %>%
     mutate_at(vars(major), fct_explicit_na) %>%
     mutate_at(vars(instructor), as_factor) %>%
     mutate(term_posix = parse_date_time2(term, 'Ym'))
+dmg_df = read_rds(str_c(data_folder, '01_dmg.Rds'))
 major_term = read_rds(str_c(data_folder, '01_major_long.Rds'))
 
 
@@ -38,24 +37,18 @@ major_term = read_rds(str_c(data_folder, '01_major_long.Rds'))
 analysis_df = profile_df %>%
     filter(gender != 'N', !is.na(major_at_first_phil)) %>% 
     ## Demographic groups
-    mutate(gender = fct_relevel(gender, 'M'), 
-           race4 = fct_collapse(race, 
-                               White = 'White', 
-                               Asian = 'Asian', 
-                               BHIP = c('Black', 'Hispanic', 'Indigenous', 'Pacific Islander'), 
-                               Other = 'Other'), 
-           race4 = fct_relevel(race4, 'White', 'Asian', 'BHIP', 'Other'), 
-           demographic = interaction(gender, race4, drop = TRUE)) %>%
+    mutate(gender = fct_relevel(gender, 'M')) %>%
     filter(race4 != 'Other') %>%
+    ## Course-level data
     unnest() %>%
     left_join(crs_df, by = c('id', 'course_id'), 
               suffix = c('', '.class')) %>%
-    filter(!is.na(grade)) %>%
+    ## Difference in mean GPA (DMG) across demographic groups
+    left_join(dmg_df, by = c('course_id', 'demographic')) %>%
+    ## Other cleaning
+    filter(!is.na(grade), !is.na(term_cum_gpa)) %>%
     rowwise() %>%
-    mutate(grade_diff = term_cum_gpa - grade, 
-           other_major = any(human_dev, bio_sci, soc),
-           other_major_share = human_dev_share + bio_sci_share + soc_share,
-           year = as.factor(year), 
+    mutate(year = as.factor(year), 
            quarter = as.factor(quarter)) %>%
     ungroup()
 write_rds(analysis_df, str_c(data_folder, '03_analysis_df.Rds'))
@@ -339,6 +332,56 @@ analysis_df %>%
     coord_flip() +
     facet_wrap(~ var)
 
+## Distribution of GPA gap across demographics
+## No group is disadvantaged; 
+## But white men and asian women might have a slightly greater advantage than most other demographics
+analysis_df %>% 
+    group_by(demographic) %>% 
+    summarize_at(vars(grade_diff), 
+                 funs(mean, sd, n())) %>% 
+    mutate(se = sd/sqrt(n), 
+           ci.lo = mean + qnorm(.025)*se, 
+           ci.hi = mean + qnorm(.975)*se) %>% 
+    ggplot(aes(demographic, y = mean)) +
+    geom_pointrange(aes(ymin = ci.lo, 
+                        ymax = ci.hi)) +
+    geom_hline(yintercept = 0)
+
+## Distribution of DMG at student level
+## If DMG is how we operationalize discrimination, this gets at student's encounters with discrimination against their group in their first philosophy course
+## No group encounters discrimination against them on average, except possibly BHIP women
+## White men and asian women and men encounter discrimination in their favor; however, this effect is very small to negligible
+## sds are still relatively large, .3-.6 grade points
+analysis_df %>% 
+    group_by(demographic, id) %>% 
+    summarize(dmg = mean(dmg)) %>% 
+    summarize_at(vars(dmg), 
+                 funs(mean, sd, n())) %>% 
+    mutate(se = sd / sqrt(n), 
+           ci.lo = mean + qnorm(.025)*se, 
+           ci.hi = mean + qnorm(.975)*se) %>% 
+    ggplot(aes(demographic, mean)) +
+    geom_pointrange(aes(ymin = ci.lo, 
+                        ymax = ci.hi)) +
+    geom_hline(yintercept = 0)
+
+## Distribution of DMG at the course level, 1. philosophy students only
+## Here there's evidence that white men are advantaged and BHIP women are disdavantaged
+## This is kind of a weird calculation, though, because it's averaging across courses but only for certain students
+# analysis_df %>% 
+#     group_by(demographic, course_id) %>% 
+#     summarize(dmg = mean(dmg)) %>% 
+#     summarize_at(vars(dmg), 
+#                  funs(mean, sd, n())) %>% 
+#     mutate(se = sd / sqrt(n), 
+#            ci.lo = mean + qnorm(.025)*se, 
+#            ci.hi = mean + qnorm(.975)*se) %>% 
+#     ggplot(aes(demographic, mean)) +
+#     geom_pointrange(aes(ymin = ci.lo, 
+#                         ymax = ci.hi)) +
+#     geom_hline(yintercept = 0)
+    
+
 
 ## Correlations ----
 cors_long = analysis_df %>%
@@ -357,3 +400,16 @@ ggplot(cors_long, aes(Var1, Var2, fill = cor)) +
     geom_tile() +
     scale_fill_gradient2(low = 'red', high = 'blue', limits = c(-1, 1))
 
+## Tables of course titles and majors ----
+analysis_df %>% 
+    count(title) %>% 
+    write_csv(str_c(insecure_data_folder, '03_courses.csv'))
+analysis_df %>% 
+    count(major) %>% 
+    mutate(major_split = str_split(major, ',(?![ F(Ph)])')) %>% 
+    unnest(major_split) %>% 
+    group_by(major = major_split) %>% 
+    summarize(n = sum(n)) %>% 
+    mutate(college = str_extract(major, '[A-Z]')) %>% 
+    select(college, major, n) %>% 
+    write_csv(str_c(insecure_data_folder, '03_majors.csv'))

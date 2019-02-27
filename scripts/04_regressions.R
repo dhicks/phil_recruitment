@@ -93,7 +93,9 @@ rootogram_binom = function(model,
                            response, ## observed values of y
                            threshold, ## for discretizing fitted values
                            delogit = FALSE, ## do fitted values need to be de-logit-ed? 
-                           sqrt_scale = TRUE ## on the y axis
+                           sqrt_scale = TRUE, ## on the y axis
+                           breaks = c(5, 10, 50, 1e2, 5e2, 1e3, 5e3, 1e4), 
+                           minor_breaks = NULL
 ) {
     response_var = enquo(response)
     
@@ -103,35 +105,46 @@ rootogram_binom = function(model,
                               .fitted = boot::inv.logit(.fitted))
     }
     augmented_df = mutate(augmented_df, 
-                          .predicted = (.fitted > threshold) + 1)
+                          .predicted = .fitted > threshold)
     
     plot = ggplot(augmented_df) +
         stat_count(aes(!!response_var, color = 'observed', group = 1L), 
                    geom = 'col', fill = NA) +
         stat_count(aes(.predicted, color = 'fitted', group = 1L), 
-                   geom = 'line')
+                   geom = 'line') +
+        stat_count(aes(.predicted, color = 'fitted', group = 1L), 
+                   geom = 'point')
     if (sqrt_scale) {
-        plot = plot + scale_y_sqrt()
+        plot = plot + 
+            scale_y_sqrt(breaks = breaks, 
+                         minor_breaks = minor_breaks)
     }
     return(plot)
 }
 
 threshold = .3
 rootogram_binom(model_lm, NULL, ever_phil, threshold) +
+    facet_wrap(~ demographic, scales = 'free') +
     theme_minimal() +
     ggtitle(str_c('linear probability: ', threshold, '; training data'),
             subtitle = Sys.time())
+
 rootogram_binom(model_lm, test_df, ever_phil, threshold) +
+    facet_wrap(~ demographic, scales = 'free') +
     theme_minimal() +
     ggtitle(str_c('linear probability: ', threshold, '; testing data'),
             subtitle = Sys.time())
+
 rootogram_binom(model_logit, NULL, ever_phil, threshold, 
                 delogit = TRUE) +
+    facet_wrap(~ demographic, scales = 'free') +
     theme_minimal() +
     ggtitle(str_c('logistic regression: ', threshold, '; training data'), 
             subtitle = Sys.time())
+
 rootogram_binom(model_logit, test_df, ever_phil, threshold, 
                 delogit = TRUE) +
+    facet_wrap(~ demographic, scales = 'free') +
     theme_minimal() +
     ggtitle(str_c('logistic regression: ', threshold, '; testing data'), 
             subtitle = Sys.time())
@@ -191,7 +204,9 @@ model_hurdle = hurdle(later_form,
 rootogram_count = function(model_list,
                            new_data = NULL, 
                            response, 
-                           sqrt_scale = TRUE) {
+                           sqrt_scale = TRUE,
+                           breaks = c(5, 10, 50, 1e2, 5e2, 1e3, 5e3, 1e4), 
+                           minor_breaks = NULL) {
     ## Wrapper to simplify passing a single model
     if (!inherits(model_list, 'list')) {
         model_list = list(model_list)
@@ -244,7 +259,8 @@ rootogram_count = function(model_list,
     
     ## Conventionally a sqrt transform allows comparison in the tails
     if (sqrt_scale) {
-        plot = plot + scale_y_sqrt()
+        plot = plot + scale_y_sqrt(breaks = breaks, 
+                                   minor_breaks = minor_breaks)
     }
     return(plot)
 }
@@ -297,13 +313,16 @@ rootogram_count = function(model_list,
 ## maybe this is due to missing minors? 
 ## Overdisperson is a clear issue for Poisson
 ## The hurdle does better in the teens, but the plain NB handles the tail better
-rootogram_count(list('Poisson' = model_pois, 
-                       'n.b.' = model_nb, 
-                       'zinb' = model_zinb,
+rootogram_count(list(#'Poisson' = model_pois, 
+                       # 'n.b.' = model_nb, 
+                       # 'zinb' = model_zinb,
                        'hurdle n.b.' = model_hurdle), 
                   new_data = test_df,
                   response = n_later_phil) +
-    scale_y_sqrt(breaks = c(1, 10, 100, 1000, 2000, 3000)) +
+    # scale_y_sqrt(breaks = c(1, 10, 100, 1000, 2000, 3000)) +
+    geom_vline(xintercept = c(5-1, 13-1), 
+               color = 'grey50', linetype = 'dashed') +
+    facet_wrap(~ demographic, scales = 'free') +
     scale_color_brewer(palette = 'Set1') +
     theme_minimal()
 

@@ -13,11 +13,15 @@ library(tictoc)
 source('../R/rootogram_binom.R')
 source('../R/rootogram_count.R')
 
+## Function for extracting estimates for a process and properly combining demographci interactions
+source('../R/extract_estiamtes.R')
+
 data_folder = '/Volumes/DSI_SECURE/phil_recruitment/'
 insecure_data_folder = '../data_insecure/'
 plots_folder = '../plots/'
 
 test_share = .25 ## fraction of observations in test set
+
 
 ## Load data ----
 ## Instructor demographics
@@ -189,3 +193,66 @@ rootogram_count(list(#'Poisson' = model_pois,
     theme_minimal()
 
 
+## Extract estimates ----
+## TODO:  one giant grid of plots is overwhelming; need to break these into blocks by groups of models and groups of processes
+
+model_list = list('linear probability' = model_lm,
+                  'logit' = model_logit,
+                  'Poisson' = model_pois,
+                  'negative binomial' = model_nb,
+                  'hurdle n.b.' = model_hurdle
+)
+n_model_plots = ifelse('hurdle n.b.' %in% names(model_list), 
+                       length(model_list) + 1, 
+                       length(model_list))
+process_list = list(#'low_income', 
+    # 'first_gen',
+    # 'admission_type',
+    # 'undeclared.student',
+    'grade_diff',
+    'dmg'
+    # 'women_share',
+    # 'poc_share',
+    # 'current_phil_share',
+    # 'n_students',
+    # 'gender.instructor'
+    # 'race.instructor'
+)
+
+estimates = cross_df(list(model = model_list, process = process_list)) %>% 
+    mutate(model_name = rep.int(names(model_list), 
+                                length(process_list))) %>% 
+    mutate(estimates = map2(model, process, extract_estimates)) %>% 
+    unnest(estimates) %>% 
+    rename(model = model_name) %>% 
+    mutate(model = fct_inorder(model), 
+           process = fct_inorder(process1)) %>% 
+    ## Back-transform estimates
+    mutate_if(is.numeric,
+              ~ ifelse(model == 'linear probability', 
+                       ., 
+                       exp(.) - 1))
+
+ggplot(estimates, 
+       aes(x = term, y = estimate.comb, 
+           ymin = ci.low, ymax = ci.high, 
+           color = race, shape = gender)) +
+    geom_pointrange(position = position_dodge(width = .25)) +
+    geom_hline(yintercept = 0, linetype = 'dashed') +
+    coord_flip() +
+    facet_wrap(~ model + #hurdle_component + 
+                   process, scales = 'free_x', 
+               nrow = n_model_plots) +
+    xlab('') +
+    # ylab('estimated effect') +
+    scale_y_continuous(labels = scales::percent_format()) +
+    scale_color_brewer(palette = 'Set1') +
+    theme_bw() +
+    theme(legend.position = 'bottom') +
+    ggtitle('Preliminary effects estimates', 
+            subtitle = Sys.time())
+
+ggsave(str_c(plots_folder, '04_estimates.png'), 
+       width = 5*(length(process_list) + 0),
+       height = 3*(n_model_plots + 1), 
+       scale = 1/2)

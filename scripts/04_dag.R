@@ -9,7 +9,10 @@ library(ggraph)
 # devtools::install_github("schochastics/smglr")
 library(smglr)
 
+plots_folder = '../plots/'
+data_folder = '../data_insecure/'
 
+## Variable sets ----
 ## Variables of interest
 vars = c('class', 'admission_type', 'undeclared.student', 
          'grade_diff', 'dmg', 
@@ -51,10 +54,11 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                       instructor_demographics,
                   mean_grade ~ bias + peer_demographics + 
                       instructor_demographics + current_phil_share,
+                  
                   latent = c('prev_phil_course', 'classroom_culture', 
                              'practical_major', 'prior_perceptions', 
-                             'philosophy_person', 'mentoring', 'schema_clash', 'bias'),
-                  
+                             'philosophy_person', 'mentoring', 
+                             'schema_clash', 'bias'),
                   outcome = 'outcome')
 
 
@@ -63,7 +67,7 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
 #       text_col = 'red') +
 #     theme_dag_blank()
 
-stress = phil_dag %>% 
+layout = phil_dag %>% 
     as_tbl_graph() %>% 
     layout_with_focus(., length(V(.))) %>% 
     `colnames<-`(c('x', 'y')) %>% 
@@ -78,18 +82,22 @@ phil_dag %>%
                                             'other_major_share', 
                                             'other_major.student') ~ 'measured control',
                                 TRUE ~ 'error')) %>% 
-    ggraph(layout = 'manual', node.positions = stress) +
+    ggraph(layout = 'manual', node.positions = layout) +
     geom_node_label(aes(label = name, fill = var_type), 
                     color = 'white') +
     geom_edge_link(arrow = arrow(angle = 10, length = unit(3, 'mm')),
                    aes(start_cap = circle(5, 'mm'),
                        end_cap = circle(8, "mm"))) +
-    scale_fill_brewer(palette = 'Set1', name = 'variable type', 
+    scale_fill_brewer(palette = 'Set1', name = '', 
                       direction = -1) +
-    theme_graph()
+    theme_graph() +
+    theme(legend.position = 'bottom')
+
+ggsave(str_c(plots_folder, '04_dag.png'), 
+       height = 6, width = 11)
 
 
-## Construct control sets
+## Construct control sets ----
 controls = map(vars, ~adjustmentSets(phil_dag, exposure = .))
 controls
 all(map_int(controls, length) > 0)
@@ -148,7 +156,7 @@ reg_form_df = map_depth(controls, 2, construct_form) %>%
                                  c('gender.instructor', 
                                    'race.instructor'))) %>% 
     ## Outcome variables
-    crossing(tibble(outcome = c('ever_phil', 
+    tidyr::crossing(tibble(outcome = c('ever_phil', 
                                 'n_later_phil'))) %>% 
     mutate(reg_form = str_c(outcome, ' ~ ', reg_form), 
            ## ever_phil is a general control for the n_later_phil models
@@ -158,5 +166,6 @@ reg_form_df = map_depth(controls, 2, construct_form) %>%
     select(outcome, focal_var, everything()) %>% 
     arrange(outcome, focal_var)
 
-
 # thing = lm(reg_form_df$reg_form[[10]], data = train_df)
+
+write_rds(reg_form_df, str_c(data_folder, '04_reg_form.Rds'))

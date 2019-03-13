@@ -1,7 +1,8 @@
 ## Rootogram for Poisson and NB models, plus zi and hurdle variants
 rootogram_count = function(model_list,
-                           new_data = NULL, 
                            response, 
+                           quoted = FALSE, 
+                           new_data = NULL, 
                            sqrt_scale = TRUE,
                            breaks = c(5, 10, 50, 1e2, 5e2, 1e3, 5e3, 1e4), 
                            minor_breaks = NULL) {
@@ -26,7 +27,12 @@ rootogram_count = function(model_list,
         return(augmented_df)
     }
     
-    response_var = enquo(response)
+    if (quoted) {
+        response_var = sym(response)
+    } else {
+        response_var = enquo(response)
+    }
+    
     if (is.null(new_data)) {
         new_data = model_list[[1]]$model
     }

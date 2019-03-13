@@ -17,7 +17,7 @@ data_folder = '../data_insecure/'
 vars = c('class', 'admission_type', 'undeclared.student', 
          'grade_diff', 'dmg', 
          'peer_demographics', 'current_phil_share', 
-         'n_students', 'intro_course',
+         'n_students', #'intro_course',
          'instructor_demographics')
 names(vars) = vars
 
@@ -30,7 +30,7 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                       other_major.student +
                       philosophy_person + mentoring, 
                   practical_major ~ class, 
-                  undeclared.student ~ admission_type + intro_course, 
+                  undeclared.student ~ admission_type, # + intro_course, 
                   philosophy_person ~ prior_perceptions + 
                       classroom_culture + schema_clash + mentoring,
                   mentoring ~ instructor_demographics + bias, 
@@ -47,9 +47,9 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                   classroom_culture ~ bias + n_students + mean_grade +
                       current_phil_share + other_major_share + 
                       peer_demographics + instructor_demographics,
-                  n_students ~ intro_course, 
+                  # n_students ~ intro_course, 
                   grade_diff ~ dmg + prev_phil_course, 
-                  current_phil_share ~ intro_course, 
+                  # current_phil_share ~ intro_course, 
                   peer_demographics ~ current_phil_share + 
                       instructor_demographics,
                   mean_grade ~ bias + peer_demographics + 

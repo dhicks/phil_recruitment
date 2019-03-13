@@ -17,8 +17,8 @@ extract_estimates = function(model, var) {
                  'se' = filtered_df[[1, 3]])
     
     effects_df = filtered_df %>%
-        separate(col = term, into = c('term', 'process'), 
-                 sep = ':', fill = 'left') %>%
+        separate(col = term, into = c('process', 'term'), 
+                 sep = ':', fill = 'right') %>%
         replace_na(list('term' = 'demographicM.White')) %>%
         mutate(term = str_remove(term, 'demographic')) %>%
         separate(col = term, into = c('gender', 'race'), 

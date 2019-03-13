@@ -1,9 +1,12 @@
 # This script generates the regression models, as well as rootograms to assess goodness-of-fit
 
 ## TODO:  
-## - additional model types (logistic, Poisson)
-## - error detection in construct_expr
 ## - extract estimates
+##     - see notes on this below
+## - rootogram stuff
+##     - perusable display of rootograms
+##     - pass sets of models to `rootogram` (eg, all count models for a given focal_var) and get back a smaller number of rootograms
+##     - pass list of model names to use in legend
 
 library(tidyverse)
 
@@ -57,6 +60,8 @@ dataf = read_rds(str_c(data_folder, '03_analysis_df.Rds')) %>%
 model_types = tribble(
     ~ outcome, ~ model_type, 
     'ever_phil', 'lm', 
+    'ever_phil', 'logistic',
+    'n_later_phil', 'Poisson',
     'n_later_phil', 'hurdle'
 )
 
@@ -77,14 +82,21 @@ test_df = dataf[test_rows,]
 
 
 ## Fit models ----
-construct_expr = function(model_type, reg_form) {
+construct_expr = function(model_type, reg_form, 
+                          data_arg = 'data = train_df') {
+    model_types = c('lm', 'hurdle', 'logistic', 'Poisson')
+    if (!all(model_type %in% model_types)) {
+        stop(paste('unknown model type'))
+    }
+    
     fn = case_when(model_type == 'lm' ~ 'lm', 
-                   model_type == 'hurdle' ~ 'hurdle', 
-                   TRUE ~ 'error')
-    data_arg = 'data = train_df'
+                   model_type == 'logistic' ~ 'glm',
+                   model_type == 'Poisson' ~ 'glm',
+                   model_type == 'hurdle' ~ 'hurdle')
     other_args = case_when(model_type == 'lm' ~ '', 
-                           model_type == 'hurdle' ~ "dist = 'negbin', trace = 1", 
-                           TRUE ~ 'error')
+                           model_type == 'logistic' ~ 'family = binomial',
+                           model_type == 'Poisson' ~ 'family = poisson',
+                           model_type == 'hurdle' ~ "dist = 'negbin', trace = 1")
     inner = ifelse(other_args == '', 
                    str_c(reg_form, data_arg, sep = ', '), 
                    str_c(reg_form, data_arg, other_args, sep = ', '))
@@ -94,7 +106,9 @@ construct_expr = function(model_type, reg_form) {
     return(comb)
 }
 
-## w/ just lm and hurdle, ~20 sec
+# construct_expr('logistic', 'monkey + zoo')
+
+## lm, logistic, Poisson, and hurdle:  ~24 sec
 tic()
 models = reg_form %>% 
     # slice(18:19) %>% 
@@ -122,14 +136,18 @@ rootogram = function(outcome, ## character
     }
 }
 
-models =  models %>% 
+rootogram_df =  models %>% 
     mutate(rootogram = map2(outcome, model, 
                             ~ rootogram(.x, .y, threshold = .2,
-                                          new_data = train_df)))
+                                          new_data = train_df))) %>% 
+    rowwise() %>% 
+    mutate(rootogram = list(rootogram + 
+                                ggtitle(str_c(focal_var, ': ', model_type)))) %>% 
+    select(-model)
 
-# models$rootogram[[1]]
 # rootogram('ever_phil', models$model[[1]], threshold = .2, 
 #           new_data = train_df)
+# rootogram_df$rootogram[[19]]
 
 # library(cowplot)
 # models %>% 
@@ -140,6 +158,13 @@ models =  models %>%
 #     plot_grid(plotlist = ., 
 #               labels = names(.))
 
+
+## Extract estimates ----
+## TODO:  
+## The basic call works
+## - What to do when focal_var is shorthand for several vars
+## - Any complications when we map over this?  
+extract_estimates(models$model[[1]], models$focal_var[[1]])
 
 # ## ever_phil models ----
 # ever_form = formula(ever_phil ~ 1 + 

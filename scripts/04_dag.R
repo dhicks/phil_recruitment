@@ -1,4 +1,5 @@
 library(tidyverse)
+library(assertthat)
 
 library(dagitty)
 library(ggdag)
@@ -8,6 +9,13 @@ library(ggraph)
 
 # devtools::install_github("schochastics/smglr")
 library(smglr)
+
+# if (!requireNamespace("BiocManager", quietly = TRUE))
+#     install.packages("BiocManager")
+# BiocManager::install("Rgraphviz", version = "3.8")
+
+library(Rgraphviz)
+dotfile = '04_dag.dot'
 
 plots_folder = '../plots/'
 data_folder = '../data_insecure/'
@@ -30,32 +38,39 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                       other_major.student +
                       philosophy_person + mentoring, 
                   practical_major ~ class, 
-                  undeclared.student ~ admission_type, # + intro_course, 
+                  undeclared.student ~ admission_type + intro_course + other_major.student, 
+                  admission_type ~ class,
                   philosophy_person ~ prior_perceptions + 
-                      classroom_culture + schema_clash + mentoring,
+                      classroom_culture + schema_clash + mentoring +
+                      grade_diff + field_spec_ability,
+                  field_spec_ability ~ classroom_culture + grade_diff + prior_perceptions + mentoring,
                   mentoring ~ instructor_demographics + bias, 
                   other_major.student ~ other_major_share,
+                  other_major_share ~ intro_course,
                   schema_clash ~ classroom_culture + 
                       prior_perceptions + 
                       grade_diff + current_phil_share + 
                       peer_demographics +
-                      instructor_demographics,
+                      instructor_demographics +
+                      field_spec_ability,
                   prior_perceptions ~ class, 
                   prev_phil_course ~ admission_type + class + 
                       undeclared.student, 
                   bias ~ dmg + instructor_demographics, 
                   classroom_culture ~ bias + n_students + mean_grade +
                       current_phil_share + other_major_share + 
-                      peer_demographics + instructor_demographics,
-                  # n_students ~ intro_course, 
+                      peer_demographics + instructor_demographics +
+                      intro_course,
+                  n_students ~ intro_course,
                   grade_diff ~ dmg + prev_phil_course, 
-                  # current_phil_share ~ intro_course, 
+                  current_phil_share ~ intro_course,
                   peer_demographics ~ current_phil_share + 
                       instructor_demographics,
                   mean_grade ~ bias + peer_demographics + 
                       instructor_demographics + current_phil_share,
                   
                   latent = c('prev_phil_course', 'classroom_culture', 
+                             'intro_course', 'field_spec_ability',
                              'practical_major', 'prior_perceptions', 
                              'philosophy_person', 'mentoring', 
                              'schema_clash', 'bias'),
@@ -63,15 +78,35 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
 
 
 ## Visualize ----
+## ggdag's layouts are ... yeah
 # ggdag(phil_dag, node = TRUE, stylized = FALSE,
 #       text_col = 'red') +
 #     theme_dag_blank()
 
-layout = phil_dag %>% 
+## smglr does a somewhat better job, but can't organize things hierarchically
+# layout = phil_dag %>% 
+#     as_tbl_graph() %>% 
+#     layout_with_focus(., length(V(.))) %>% 
+#     `colnames<-`(c('x', 'y')) %>% 
+#     as_tibble()
+
+## Rgraphviz layout
+## Coercing from igraph:  <https://stackoverflow.com/questions/9663504/is-there-a-package-to-convert-network-or-igraph-networks-to-rgraphviz-compat>
+## write.graph(mygraph, file="filename", format="dot")
+
+phil_dag %>% 
     as_tbl_graph() %>% 
-    layout_with_focus(., length(V(.))) %>% 
-    `colnames<-`(c('x', 'y')) %>% 
-    as_tibble()
+    write.graph(file = str_c(data_folder, dotfile), 
+                format = 'dot')
+
+layout = agread(str_c(data_folder, dotfile)) %>% 
+{.@AgNode} %>% 
+    map(~ .@center) %>% 
+    map_dfr(~ tibble(x = .@x, 
+                     y = .@y)) %>% 
+    layout_rotate(90) %>% 
+    set_names(c('x', 'y'))
+
 
 phil_dag %>% 
     as_tbl_graph() %>% 
@@ -87,20 +122,21 @@ phil_dag %>%
                     color = 'white') +
     geom_edge_link(arrow = arrow(angle = 10, length = unit(3, 'mm')),
                    aes(start_cap = circle(5, 'mm'),
-                       end_cap = circle(8, "mm"))) +
+                       end_cap = circle(8, "mm")), 
+                   alpha = .5) +
     scale_fill_brewer(palette = 'Set1', name = '', 
                       direction = -1) +
     theme_graph() +
     theme(legend.position = 'bottom')
 
 ggsave(str_c(plots_folder, '04_dag.png'), 
-       height = 6, width = 11)
+       height = 6, width = 11, scale = 1.5)
 
 
 ## Construct control sets ----
 controls = map(vars, ~adjustmentSets(phil_dag, exposure = .))
 controls
-all(map_int(controls, length) > 0)
+assert_that(all(map_int(controls, length) > 0))
 
 
 ## Construct formulas ----
@@ -128,9 +164,9 @@ expand_var = function(string, var, expansion) {
     ## If foobar is expanded to foo and bar, 
     ## replace foobar*thing with foo*thing + bar*thing
     string = str_replace_all(string,
-                                   str_c(var, '\\*', '([[:alnum:]]+)'),
-                                   str_c(expansion, '\\*\\1',
-                                         collapse = ' + '))
+                             str_c(var, '\\*', '([[:alnum:]]+)'),
+                             str_c(expansion, '\\*\\1',
+                                   collapse = ' + '))
     return(string)
 }
 # expand_var('1 + class*foo + class*demographic', 
@@ -138,7 +174,7 @@ expand_var = function(string, var, expansion) {
 #            c('low_income', 'first_gen'))
 
 ## Apply construct_form to each set of controls, then combine into df
-reg_form_df = map_depth(controls, 2, construct_form) %>% 
+reg_form_df = map_depth(controls, 2, construct_form) %>%
     map_depth(3, ~ tibble(reg_form = .)) %>% 
     map_depth(2, bind_rows) %>% 
     map(bind_rows) %>% 
@@ -154,10 +190,21 @@ reg_form_df = map_depth(controls, 2, construct_form) %>%
            reg_form = expand_var(reg_form, 
                                  'instructor_demographics', 
                                  c('gender.instructor', 
-                                   'race.instructor'))) %>% 
+                                   'race.instructor')), 
+           reg_form = expand_var(reg_form, 
+                                 'n_students', 
+                                 'log10(n_students)')) %>% 
+    mutate(focal_var = map(focal_var, 
+                           ~ case_when(. == 'class' ~ list(c('low_income', 'first_gen')), 
+                                       . == 'peer_demographics' ~ list(c('women_share', 'poc_share')), 
+                                       . == 'instructor_demographics' ~ list(c('gender.instructor', 'race.instructor')),
+                                       TRUE ~ list(.))), 
+           focal_var = flatten(focal_var)) %>% 
+    unnest(focal_var) %>% 
+    select(focal_var, everything()) %>% 
     ## Outcome variables
     tidyr::crossing(tibble(outcome = c('ever_phil', 
-                                'n_later_phil'))) %>% 
+                                       'n_later_phil'))) %>% 
     mutate(reg_form = str_c(outcome, ' ~ ', reg_form), 
            ## ever_phil is a general control for the n_later_phil models
            reg_form = ifelse(outcome == 'n_later_phil', 

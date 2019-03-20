@@ -18,6 +18,7 @@ library(googlesheets)
 library(tictoc)
 
 ## Rootograms
+source('../R/rootogram.R')
 source('../R/rootogram_binom.R')
 source('../R/rootogram_count.R')
 
@@ -57,7 +58,7 @@ dataf = read_rds(str_c(data_folder, '03_analysis_df.Rds')) %>%
 ## Regression formulas and model types ----
 model_types = tribble(
     ~ outcome, ~ model_type, ~xintercept,
-    'ever_phil', 'lm', 0, 
+    'ever_phil', 'lm', 0,
     'ever_phil', 'logistic', 1,
     'n_later_phil', 'Poisson', 1,
     'n_later_phil', 'hurdle', 1
@@ -131,27 +132,9 @@ toc()
 
 
 ## Rootograms ---
-rootogram = function(outcome, ## character
-                     model,
-                     threshold = .5, ...) {
-    if (outcome == 'ever_phil') {
-        rootogram_binom(model, 
-                        response = outcome, 
-                        quoted = TRUE,
-                        threshold = threshold, ...)
-    } else if (outcome == 'n_later_phil') {
-        rootogram_count(model, 
-                        response = outcome, 
-                        quoted = TRUE,
-                        ...)
-    } else {
-        stop('outcome not recognized')
-    }
-}
-
 rootogram_df =  models %>% 
     mutate(rootogram = map2(outcome, model, 
-                            ~ rootogram(.x, .y, threshold = .2,
+                            ~ rootogram(.x, .y, #threshold = .2,
                                         new_data = train_df))) %>% 
     rowwise() %>% 
     mutate(rootogram = list(rootogram + 

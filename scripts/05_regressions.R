@@ -1,7 +1,11 @@
 # This script generates the regression models, as well as rootograms to assess goodness-of-fit
 
 ## TODO:  
+## - course division
+##     - import Google Sheet
+##     - rerun models
 ## - rootogram stuff
+##     - yardstick: AUC calculations; sensitivity rates? 
 ##     - perusable display of rootograms
 ##     - pass sets of models to `rootogram` (eg, all count models for a given focal_var) and get back a smaller number of rootograms
 ##     - pass list of model names to use in legend
@@ -32,7 +36,7 @@ plots_folder = '../plots/'
 
 test_share = .25 ## fraction of observations in test set
 
-plot_filters = quos(ci.high < 3, is.finite(se.comb))
+plot_filters = quos(ci.high < 3, is.finite(se.comb)) ## used to filter plot-breaking values before generating effects estimates plots
 
 
 ## Load data ----

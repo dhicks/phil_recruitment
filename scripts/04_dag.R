@@ -25,7 +25,7 @@ data_folder = '../data_insecure/'
 vars = c('class', 'admission_type', 'undeclared.student', 
          'grade_diff', 'dmg', 
          'peer_demographics', 'current_phil_share', 
-         'n_students', #'intro_course',
+         'n_students', 'course_division',
          'instructor_demographics')
 names(vars) = vars
 
@@ -38,7 +38,7 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                       other_major.student +
                       philosophy_person + mentoring, 
                   practical_major ~ class, 
-                  undeclared.student ~ admission_type + intro_course + other_major.student, 
+                  undeclared.student ~ admission_type + course_division + other_major.student, 
                   admission_type ~ class,
                   philosophy_person ~ prior_perceptions + 
                       classroom_culture + schema_clash + mentoring +
@@ -46,7 +46,7 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                   field_spec_ability ~ classroom_culture + grade_diff + prior_perceptions + mentoring,
                   mentoring ~ instructor_demographics + bias, 
                   other_major.student ~ other_major_share,
-                  other_major_share ~ intro_course,
+                  other_major_share ~ course_division,
                   schema_clash ~ classroom_culture + 
                       prior_perceptions + 
                       grade_diff + current_phil_share + 
@@ -60,17 +60,17 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                   classroom_culture ~ bias + n_students + mean_grade +
                       current_phil_share + other_major_share + 
                       peer_demographics + instructor_demographics +
-                      intro_course,
-                  n_students ~ intro_course,
+                      course_division,
+                  n_students ~ course_division,
                   grade_diff ~ dmg + prev_phil_course, 
-                  current_phil_share ~ intro_course,
+                  current_phil_share ~ course_division,
                   peer_demographics ~ current_phil_share + 
                       instructor_demographics,
                   mean_grade ~ bias + peer_demographics + 
                       instructor_demographics + current_phil_share,
                   
                   latent = c('prev_phil_course', 'classroom_culture', 
-                             'intro_course', 'field_spec_ability',
+                             'field_spec_ability',
                              'practical_major', 'prior_perceptions', 
                              'philosophy_person', 'mentoring', 
                              'schema_clash', 'bias'),

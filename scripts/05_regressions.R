@@ -8,7 +8,8 @@
 
 library(tidyverse)
 
-library(lme4)
+# library(lme4)
+library(brglm2)
 # library(MASS)
 library(pscl)
 library(broom)
@@ -30,6 +31,8 @@ insecure_data_folder = '../data_insecure/'
 plots_folder = '../plots/'
 
 test_share = .25 ## fraction of observations in test set
+
+plot_filters = quos(ci.high < 3, is.finite(se.comb))
 
 
 ## Load data ----
@@ -57,11 +60,12 @@ dataf = read_rds(str_c(data_folder, '03_analysis_df.Rds')) %>%
 
 ## Regression formulas and model types ----
 model_types = tribble(
-    ~ outcome, ~ model_type, ~xintercept,
-    'ever_phil', 'lm', 0,
-    'ever_phil', 'logistic', 1,
-    'n_later_phil', 'Poisson', 1,
-    'n_later_phil', 'hurdle', 1
+    ~ outcome, ~ model_type,
+    'ever_phil', 'lm',
+    'ever_phil', 'logistic',
+    'ever_phil', 'bias-reduced logistic',
+    'n_later_phil', 'Poisson',
+    'n_later_phil', 'hurdle'
 )
 
 covar_groups = tribble(
@@ -80,7 +84,7 @@ covar_groups = tribble(
 reg_form = read_rds(str_c(insecure_data_folder, '04_reg_form.Rds')) %>% 
     left_join(model_types) %>% 
     left_join(covar_groups, by = c('focal_var' = 'covar')) %>% 
-    mutate(model_idx = row_number())
+    mutate(model_idx = as.character(row_number()))
 
 
 ## Training and testing sets ----
@@ -98,17 +102,23 @@ test_df = dataf[test_rows,]
 ## Fit models ----
 construct_expr = function(model_type, reg_form, 
                           data_arg = 'data = train_df') {
-    model_types = c('lm', 'hurdle', 'logistic', 'Poisson')
+    ## To add a new model type:  
+    ## 1. Add to vector model_types
+    ## 2. Add case to fn
+    ## 3. Add case to other_args
+    model_types = c('lm', 'bias-reduced logistic', 'hurdle', 'logistic', 'Poisson')
     if (!all(model_type %in% model_types)) {
         stop(paste('unknown model type'))
     }
     
     fn = case_when(model_type == 'lm' ~ 'lm', 
                    model_type == 'logistic' ~ 'glm',
+                   model_type == 'bias-reduced logistic' ~ 'glm',
                    model_type == 'Poisson' ~ 'glm',
                    model_type == 'hurdle' ~ 'hurdle')
     other_args = case_when(model_type == 'lm' ~ '', 
                            model_type == 'logistic' ~ 'family = binomial',
+                           model_type == 'bias-reduced logistic' ~ 'family = binomial, method = "brglmFit"',
                            model_type == 'Poisson' ~ 'family = poisson',
                            model_type == 'hurdle' ~ "dist = 'negbin', trace = 1")
     inner = ifelse(other_args == '', 
@@ -122,10 +132,11 @@ construct_expr = function(model_type, reg_form,
 
 # construct_expr('logistic', 'monkey + zoo')
 
-## lm, logistic, Poisson, and hurdle:  ~24 sec
+## lm, logistic, bias-reduced logistic, Poisson, and hurdle:  ~55 sec
+## NB brglmFit warnings are due to separation w/ instructor demographics
 tic()
 models = reg_form %>% 
-    # slice(18:19) %>% 
+    # slice(10:12) %>%
     mutate(expr = map2(model_type, reg_form, construct_expr)) %>% 
     mutate(model = map(expr, ~eval(parse(text = .))))
 toc()
@@ -141,8 +152,8 @@ rootogram_df =  models %>%
                                 ggtitle(str_c(focal_var, ': ', model_type)))) %>% 
     select(-model)
 
-# rootogram('ever_phil', models$model[[1]], threshold = .2, 
-#           new_data = train_df)
+rootogram('ever_phil', models$model[[3]], threshold = .5,
+          new_data = train_df)
 # rootogram_df$rootogram[[19]]
 
 # library(cowplot)
@@ -155,6 +166,7 @@ rootogram_df =  models %>%
 #               labels = names(.))
 
 
+
 ## Extract estimates ----
 # extract_estimates(models$model[[1]], models$focal_var[[1]])
 # extract_estimates(models$model[[20]], models$focal_var[[20]])
@@ -163,12 +175,11 @@ rootogram_df =  models %>%
 estimates = map2_dfr(models$model, models$focal_var, 
                      extract_estimates, .id = 'model_idx') %>% 
     ## Model metadata
-    mutate(model_idx = as.integer(model_idx)) %>% 
     left_join(reg_form) %>% 
     ## Split hurdle models into 2 types
-    mutate(model_type = ifelse(!is.na(hurdle_component), 
-                               paste(model_type, hurdle_component), 
-                               model_type)) %>% 
+    mutate(model_type = ifelse(!is.na(hurdle_component),
+                               paste(model_type, hurdle_component),
+                               model_type)) %>%
     ## Stabilize model type order for ggplot
     mutate(model_type = fct_inorder(model_type)) %>% 
     ## Backtransform non-linear models
@@ -177,28 +188,40 @@ estimates = map2_dfr(models$model, models$focal_var,
                        exp(.) - 1, 
                        .))
 
+estimates_plot = function(data) {
+    ggplot(data = data, 
+           aes(x = term, y = estimate.comb,
+               ymin = ci.low, ymax = ci.high,
+               color = race, shape = gender)) +
+        geom_pointrange(position = position_dodge(width = .25)) +
+        geom_hline(yintercept = 0,
+                   # data = reg_form,
+                   linetype = 'dashed') +
+        coord_flip() +
+        facet_wrap(process ~ model_type,
+                   dir = 'v',
+                   scales = 'free_x', 
+                   drop = FALSE,
+                   nrow = n_distinct(estimates$model_type)
+        ) +
+        xlab('') +
+        ylab('estimated effect') +
+        scale_y_continuous(labels = scales::percent_format()) +
+        scale_color_brewer(palette = 'Set1') +
+        theme_bw() +
+        theme(legend.position = 'bottom')
+}
+
+# estimates %>% 
+#     filter(covar_group == 'instructor effects') %>% 
+#     filter() %>% 
+#     estimates_plot()
+
 estimates_plots = estimates %>% 
+    filter(!!!plot_filters) %>% 
     nest(-covar_group) %>% 
-    mutate(plot = map(data, 
-                      ~ ggplot(data = ., 
-                               aes(x = term, y = estimate.comb,
-                                   ymin = ci.low, ymax = ci.high,
-                                   color = race, shape = gender)) +
-                          geom_pointrange(position = position_dodge(width = .25)) +
-                          geom_hline(yintercept = 0,
-                                     # data = reg_form,
-                                     linetype = 'dashed') +
-                          coord_flip() +
-                          facet_wrap(~ process + model_type,
-                                     dir = 'v',
-                                     scales = 'free_x',
-                                     nrow = n_distinct(estimates$model_type)) +
-                          xlab('') +
-                          ylab('estimated effect') +
-                          scale_y_continuous(labels = scales::percent_format()) +
-                          scale_color_brewer(palette = 'Set1') +
-                          theme_bw() +
-                          theme(legend.position = 'bottom')))
+    mutate(plot = map(data, estimates_plot), 
+           plot = map2(plot, covar_group, ~ .x + ggtitle(str_to_title(.y))))
 
 ## Output ----
 write_rds(estimates, str_c(insecure_data_folder, '05_estimates.Rds'))
@@ -213,6 +236,6 @@ estimates_plots %>%
     # {walk(.$plot, ~print(.))}
     {walk2(.$plot, .$path,
           ~ ggsave(filename = .y, plot = .x,
-                   width = 6, height = 4,
+                   width = 5, height = 5,
                    scale = 2))}
 

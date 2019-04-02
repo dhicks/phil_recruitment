@@ -1,5 +1,6 @@
 ## Rootogram for Poisson and NB models, plus zi and hurdle variants
 rootogram_count = function(model_list,
+                           model_names = NULL,
                            response, 
                            quoted = FALSE, 
                            new_data = NULL, 
@@ -10,6 +11,7 @@ rootogram_count = function(model_list,
     if (!inherits(model_list, 'list')) {
         model_list = list(model_list)
     }
+    names(model_list) = model_names
     
     ## glm and MASS models have broom tidiers; pscl models don't
     augment_model = function(model, new_data) {
@@ -41,7 +43,8 @@ rootogram_count = function(model_list,
     
     ## Plot of observed values
     obs_plot = ggplot(new_data) +
-        stat_count(aes(!!response_var, color = 'observed', group = 1L), 
+        stat_count(aes(!!response_var, group = 1L), 
+                   color = 'black',
                    geom = 'col', fill = NA)
     
     ## Construct line and point layers for each model

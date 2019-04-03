@@ -1,12 +1,10 @@
-# This script generates the regression models, as well as rootograms to assess goodness-of-fit
+# This script generates the regression models, as well as ROC plots and rootograms to assess goodness-of-fit
 
 ## TODO:  
 ## - estimate extraction
-##      - what we have now works; but it's hard to read, especially for grade_diff (which has two different control sets)
-##          - logistic and bias-reduced logistic can be put on the same scale
-##          - likewise w/ Poisson and hurdle count
-##      - shade background for "substantial," "moderate," and "negligible" effect regions:  https://stackoverflow.com/questions/9968975/make-the-background-of-a-graph-different-colours-in-different-regions
-##          - can a dataframe be used to set different regions for different model types? 
+##      - need asymmetric regions for logistic and count
+##      - reorder legend:  gender, race, model
+##      - estimates_plot() to its own R file
 
 library(tidyverse)
 
@@ -29,6 +27,7 @@ library(tictoc)
 source('../R/rootogram_count.R')
 
 library(cowplot)
+## cowplot makes its own theme the default -_-
 theme_set(theme_bw())
 
 ## Function for extracting estimates for a process and properly combining demographic interactions
@@ -87,10 +86,10 @@ dataf = read_rds(str_c(data_folder, '03_analysis_df.Rds')) %>%
 ## Regression formulas and model types ----
 model_types = tribble(
     ~ outcome, ~ model_type,
-    'ever_phil', 'lm',
-    'ever_phil', 'logistic',
-    'ever_phil', 'bias-reduced logistic',
-    'n_later_phil', 'Poisson',
+    'ever_phil', 'lm', 
+    'ever_phil', 'logistic', 
+    'ever_phil', 'bias-reduced logistic', 
+    'n_later_phil', 'Poisson', 
     'n_later_phil', 'hurdle'
 )
 
@@ -247,7 +246,7 @@ ggsave(str_c(plots_folder, '05_thresh_sens.png'),
 
 ## Rootograms ----
 ## Because the ever_phil models require such low thresholds, their rootograms (at the "natural" threshold of .5) all predict 100% FALSE
-## So we'll only construct them for n_later_phil models
+## So we'll only construct rootograms for n_later_phil models
 rootogram_df = models %>% 
     filter(outcome == 'n_later_phil') %>% 
     group_by(focal_var) %>% 
@@ -306,8 +305,15 @@ estimates = map2_dfr(models$model, models$focal_var,
     mutate(model_type = ifelse(!is.na(hurdle_component),
                                paste(model_type, hurdle_component),
                                model_type)) %>%
-    ## Stabilize model type order for ggplot
-    mutate(model_type = fct_inorder(model_type)) %>% 
+    mutate(model_group = case_when(model_type == 'lm' ~ 'linear', 
+                                   model_type == 'logistic' ~ 'logistic', 
+                                   model_type == 'bias-reduced logistic' ~ 'logistic', 
+                                   model_type == 'Poisson' ~ 'count', 
+                                   model_type == 'hurdle count' ~ 'count', 
+                                   model_type == 'hurdle zero' ~ 'logistic')) %>% 
+    ## Stabilize model type and group orders for ggplot
+    mutate(model_type = fct_inorder(model_type), 
+           model_group = fct_inorder(model_group)) %>% 
     ## Backtransform non-linear models
     mutate_if(is.numeric,
               ~ ifelse(model_type != 'lm', 
@@ -315,40 +321,73 @@ estimates = map2_dfr(models$model, models$focal_var,
                        .))
 
 estimates_plot = function(data) {
+    thresholds = tribble(
+        ~model_group, ~level, ~high,
+        'linear', 'strong', Inf, 
+        'linear', 'moderate', .1, 
+        'linear', 'negligible', .05,
+        'logistic', 'strong', Inf,
+        'logistic', 'moderate', 1, 
+        'logistic', 'negligible', .1, 
+        'count', 'strong', Inf, 
+        'count', 'moderate', 1, 
+        'count', 'negligible', .1
+    ) %>% 
+        mutate(low = lead(high), 
+               model_group = fct_inorder(model_group),
+               level = fct_rev(fct_inorder(level))) %>%  
+        replace_na(list(low = 0)) %>% 
+        bind_rows(., 
+                  mutate_if(., is.numeric, ~ -.)) %>% 
+        crossing(process = unique(data$process))
+    
     ggplot(data = data, 
            aes(x = term, y = estimate.comb,
                ymin = ci.low, ymax = ci.high,
-               color = race, shape = gender, 
+               color = race, shape = gender,
+               linetype = model_type,
                group = model_idx)) +
-        geom_pointrange(position = position_dodge(width = 1)) +
+        geom_rect(data = thresholds,
+                  inherit.aes = FALSE,
+                  aes(xmin = 'M.White', xmax = 'F.Asian',
+                      ymin = high, ymax = low,
+                      alpha = level),
+                  show.legend = FALSE) +
+        scale_alpha_manual(values = c(0, .1, .2)) +
+        geom_linerange(position = position_dodge(width = 1)) +
+        geom_point(position = position_dodge(width = 1)) +
         geom_hline(yintercept = 0,
                    # data = reg_form,
                    linetype = 'dashed') +
         coord_flip() +
-        facet_wrap(process ~ model_type,
+        facet_wrap(vars(process, model_group),
                    dir = 'v',
-                   scales = 'free_x', 
+                   scales = 'free_x',
                    drop = FALSE,
-                   nrow = n_distinct(estimates$model_type)
-        ) +
+                   nrow = n_distinct(estimates$model_group)) +
         xlab('') +
         ylab('estimated effect') +
         scale_y_continuous(labels = scales::percent_format()) +
         scale_color_brewer(palette = 'Set1') +
+        scale_linetype(name = 'model', guide = guide_legend(nrow = 2)) +
         theme_bw() +
-        theme(legend.position = 'bottom')
+        theme(legend.position = 'bottom',
+              legend.key.height = unit(2, 'lines'))
 }
 
-# estimates %>% 
-#     filter(covar_group == 'instructor effects') %>% 
-#     filter() %>% 
-#     estimates_plot()
+pl = estimates %>%
+    filter(covar_group == 'instructor effects') %>% 
+    filter(!!!plot_filters) %>% 
+    estimates_plot()
+pl
 
 estimates_plots = estimates %>% 
     filter(!!!plot_filters) %>% 
     nest(-covar_group) %>% 
     mutate(plot = map(data, estimates_plot), 
-           plot = map2(plot, covar_group, ~ .x + ggtitle(str_to_title(.y))))
+           plot = map2(plot, covar_group, ~ .x + 
+                           ggtitle(str_to_title(.y), 
+                                   subtitle = Sys.time())))
 
 ## Output ----
 write_rds(estimates, str_c(insecure_data_folder, '05_estimates.Rds'))

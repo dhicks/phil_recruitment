@@ -32,6 +32,7 @@ theme_set(theme_bw())
 
 ## Function for extracting estimates for a process and properly combining demographic interactions
 source('../R/extract_estimates.R')
+source('../R/estimates_plot.R')
 
 data_folder = '/Volumes/DSI_SECURE/phil_recruitment/'
 insecure_data_folder = '../data_insecure/'
@@ -39,7 +40,7 @@ plots_folder = '../plots/'
 
 test_share = .25 ## fraction of observations in test set
 
-plot_filters = quos(ci.high < 3, is.finite(se.comb)) ## used to filter plot-breaking values before generating effects estimates plots
+plot_filters = quos(ci.high < 4, is.finite(se.comb)) ## used to filter plot-breaking values before generating effects estimates plots
 
 
 ## Load data ----
@@ -305,6 +306,7 @@ estimates = map2_dfr(models$model, models$focal_var,
     mutate(model_type = ifelse(!is.na(hurdle_component),
                                paste(model_type, hurdle_component),
                                model_type)) %>%
+    ## Group models to reduce facets in plots
     mutate(model_group = case_when(model_type == 'lm' ~ 'linear', 
                                    model_type == 'logistic' ~ 'logistic', 
                                    model_type == 'bias-reduced logistic' ~ 'logistic', 
@@ -320,66 +322,11 @@ estimates = map2_dfr(models$model, models$focal_var,
                        exp(.) - 1, 
                        .))
 
-estimates_plot = function(data) {
-    thresholds = tribble(
-        ~model_group, ~level, ~high,
-        'linear', 'strong', Inf, 
-        'linear', 'moderate', .1, 
-        'linear', 'negligible', .05,
-        'logistic', 'strong', Inf,
-        'logistic', 'moderate', 1, 
-        'logistic', 'negligible', .1, 
-        'count', 'strong', Inf, 
-        'count', 'moderate', 1, 
-        'count', 'negligible', .1
-    ) %>% 
-        mutate(low = lead(high), 
-               model_group = fct_inorder(model_group),
-               level = fct_rev(fct_inorder(level))) %>%  
-        replace_na(list(low = 0)) %>% 
-        bind_rows(., 
-                  mutate_if(., is.numeric, ~ -.)) %>% 
-        crossing(process = unique(data$process))
-    
-    ggplot(data = data, 
-           aes(x = term, y = estimate.comb,
-               ymin = ci.low, ymax = ci.high,
-               color = race, shape = gender,
-               linetype = model_type,
-               group = model_idx)) +
-        geom_rect(data = thresholds,
-                  inherit.aes = FALSE,
-                  aes(xmin = 'M.White', xmax = 'F.Asian',
-                      ymin = high, ymax = low,
-                      alpha = level),
-                  show.legend = FALSE) +
-        scale_alpha_manual(values = c(0, .1, .2)) +
-        geom_linerange(position = position_dodge(width = 1)) +
-        geom_point(position = position_dodge(width = 1)) +
-        geom_hline(yintercept = 0,
-                   # data = reg_form,
-                   linetype = 'dashed') +
-        coord_flip() +
-        facet_wrap(vars(process, model_group),
-                   dir = 'v',
-                   scales = 'free_x',
-                   drop = FALSE,
-                   nrow = n_distinct(estimates$model_group)) +
-        xlab('') +
-        ylab('estimated effect') +
-        scale_y_continuous(labels = scales::percent_format()) +
-        scale_color_brewer(palette = 'Set1') +
-        scale_linetype(name = 'model', guide = guide_legend(nrow = 2)) +
-        theme_bw() +
-        theme(legend.position = 'bottom',
-              legend.key.height = unit(2, 'lines'))
-}
 
-pl = estimates %>%
-    filter(covar_group == 'instructor effects') %>% 
-    filter(!!!plot_filters) %>% 
-    estimates_plot()
-pl
+# estimates %>%
+#     filter(covar_group == 'instructor effects') %>%
+#     filter(!!!plot_filters) %>%
+#     estimates_plot()
 
 estimates_plots = estimates %>% 
     filter(!!!plot_filters) %>% 
@@ -395,13 +342,15 @@ write_rds(estimates_plots, str_c(insecure_data_folder, '05_estimates_plots.Rds')
 
 estimates_plots %>% 
     # slice(1) %>%
+    mutate(n_focal_var = map_int(data, ~n_distinct(.$focal_var)), 
+           n_model_groups = map_int(data, ~n_distinct(.$model_group))) %>% 
     mutate(path = str_c(plots_folder, 
                         '05_',
                         str_replace_all(covar_group, ' ', '_'), 
                         '.png')) %>% 
     # {walk(.$plot, ~print(.))}
-    {walk2(.$plot, .$path,
-          ~ ggsave(filename = .y, plot = .x,
-                   width = 5, height = 5,
-                   scale = 2))}
+    {pwalk(list(.$plot, .$path, .$n_focal_var, .$n_model_groups),
+          ~ ggsave(filename = ..2, plot = ..1,
+                   width = 3*max(..3, 1.5), height = 3*..4+1/3*3,
+                   scale = 1))}
 

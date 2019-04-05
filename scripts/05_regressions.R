@@ -2,9 +2,11 @@
 
 ## TODO:  
 ## - estimate extraction
-##      - need asymmetric regions for logistic and count
-##      - reorder legend:  gender, race, model
-##      - estimates_plot() to its own R file
+##      - nice process/covar labels
+##      - think through effect size thresholds, plotting cutoffs
+##          - unconditional prob. of majoring is 6%
+##      - legend width (curriculum, grade gap)
+##      - curriculum drops logistic and br logistic models?  maybe try a drop = FALSE somewhere
 
 library(tidyverse)
 
@@ -82,7 +84,9 @@ dataf = read_rds(str_c(data_folder, '03_analysis_df.Rds')) %>%
     left_join(course_division_df, by = 'title') %>% 
     rename(course_division = division) %>% 
     filter(!is.na(race.instructor), 
-           !is.na(course_division))
+           !is.na(course_division)) %>% 
+    ## Rescale _share variables as deciles
+    mutate_at(vars(contains('_share')), ~ .*10)
 
 ## Regression formulas and model types ----
 model_types = tribble(
@@ -167,7 +171,7 @@ construct_expr = function(model_type,
 
 # construct_expr('logistic', 'monkey + zoo')
 
-## lm, logistic, bias-reduced logistic, Poisson, and hurdle:  ~80 sec
+## lm, logistic, bias-reduced logistic, Poisson, and hurdle:  ~90 sec
 ## NB brglmFit warnings are due to separation w/ instructor demographics
 tic()
 models = reg_form %>% 
@@ -342,15 +346,17 @@ write_rds(estimates_plots, str_c(insecure_data_folder, '05_estimates_plots.Rds')
 
 estimates_plots %>% 
     # slice(1) %>%
-    mutate(n_focal_var = map_int(data, ~n_distinct(.$focal_var)), 
-           n_model_groups = map_int(data, ~n_distinct(.$model_group))) %>% 
+    mutate(n_processes = map_int(data, ~n_distinct(.$process)), 
+           n_model_groups = map_int(data, ~n_distinct(.$model_group)), 
+           width = 3*pmax(n_processes, 1.5),
+           height = 3*n_model_groups + 3*1/3) %>% 
     mutate(path = str_c(plots_folder, 
                         '05_',
                         str_replace_all(covar_group, ' ', '_'), 
                         '.png')) %>% 
     # {walk(.$plot, ~print(.))}
-    {pwalk(list(.$plot, .$path, .$n_focal_var, .$n_model_groups),
+    {pwalk(list(.$plot, .$path, .$width, .$height),
           ~ ggsave(filename = ..2, plot = ..1,
-                   width = 3*max(..3, 1.5), height = 3*..4+1/3*3,
+                   width = ..3, height = ..4,
                    scale = 1))}
 

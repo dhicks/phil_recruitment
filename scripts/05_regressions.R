@@ -118,6 +118,7 @@ covar_groups = tribble(
 reg_form = read_rds(str_c(insecure_data_folder, '04_reg_form.Rds')) %>% 
     left_join(model_types) %>% 
     left_join(covar_groups, by = c('focal_var' = 'covar')) %>% 
+    # slice(1:6, 85:88) %>% 
     mutate(model_idx = as.character(row_number()))
 
 
@@ -171,7 +172,7 @@ construct_expr = function(model_type,
 
 # construct_expr('logistic', 'monkey + zoo')
 
-## lm, logistic, bias-reduced logistic, Poisson, and hurdle:  ~90 sec
+## ~125 sec
 ## NB brglmFit warnings are due to separation w/ instructor demographics
 tic()
 models = reg_form %>% 
@@ -183,7 +184,7 @@ toc()
 
 
 ## ROC AUC for ever_phil models ----
-## ~ 63 sec
+## ~ 140 sec
 tic()
 roc_df = models %>% 
     filter(outcome == 'ever_phil') %>% 
@@ -196,12 +197,15 @@ roc_df = models %>%
                                       truth = as.factor(ever_phil))))
 toc()
 
-## ROC curves indicate that the three different specifications perform very similarly, and substantially better than a coin flip
+## ROC curves indicate that the various specifications perform very similarly, and all are substantially better than a coin flip.  
+## When there is a difference, interaction models tend to do better than full models, and logistic models do better than linear models.  
+## In every case, logistic and br logistic models have basically identical curves. 
 roc_df %>% 
     unnest(roc_curve) %>% 
     ggplot(aes(1 - specificity, sensitivity, 
                group = model_idx, 
-               color = model_type)) +
+               color = model_type, 
+               linetype = formula)) +
     geom_line() +
     stat_function(fun = identity, inherit.aes = FALSE, 
                   color = 'black') +
@@ -212,11 +216,12 @@ roc_df %>%
 ggsave(str_c(plots_folder, '05_roc.png'), 
        height = 4*3, width = 5*3)
 
-## AUC values indicate that the two logistic specifications are almost identical, and tend to perform slightly better than the linear probability model.  However, all models have moderate-good AUC between .75 and .85.  
+## AUC values indicate that the two logistic specifications are almost identical, and tend to perform slightly better than the linear probability model.  Interaction models consistently have higher AICs than full models; for some variables full model AUCs are around .70-.73.  Otherwise models have moderate-good AUCs between .75 and .85.  
 roc_df %>% 
     unnest(roc_auc) %>% 
     ggplot(aes(focal_var, .estimate, 
-               color = model_type)) +
+               color = model_type, 
+               shape = formula)) +
     geom_point(position = position_dodge(.25)) +
     coord_flip() +
     ggtitle('ROC AUC for ever_phil models', 
@@ -237,7 +242,8 @@ roc_df %>%
                                .threshold)) %>% 
     ggplot(aes(.threshold, sensitivity, 
                group = model_idx, 
-               color = model_type)) +
+               color = model_type, 
+               linetype = formula)) +
     geom_line() +
     geom_vline(xintercept = .5) +
     facet_wrap(~ focal_var, scales = 'free') +
@@ -252,11 +258,12 @@ ggsave(str_c(plots_folder, '05_thresh_sens.png'),
 ## Rootograms ----
 ## Because the ever_phil models require such low thresholds, their rootograms (at the "natural" threshold of .5) all predict 100% FALSE
 ## So we'll only construct rootograms for n_later_phil models
+
 rootogram_df = models %>% 
     filter(outcome == 'n_later_phil') %>% 
     group_by(focal_var) %>% 
     summarize(rootogram = list(rootogram_count(model, 
-                                               model_names = model_type,
+                                               model_names = interaction(model_type, formula),
                                                n_later_phil, 
                                                new_data = test_df))) %>% 
     rowwise() %>% 
@@ -285,7 +292,7 @@ rootogram_df %>%
     plot_grid(plotlist = .) %>% 
     plot_grid(rootogram_legend, 
               ncol = 2, 
-              rel_widths = c(4, .25)) %>% 
+              rel_widths = c(4, .5)) %>% 
     ## Very hacky way of adding a title to a cowplot composite:  
     ## <https://stackoverflow.com/questions/50973713/ggplot2-creating-themed-title-subtitle-with-cowplot#50975628>
     plot_grid(rootogram_title, ., 
@@ -298,12 +305,16 @@ ggsave(str_c(plots_folder, '05_rootograms.png'),
 
 
 ## Extract estimates ----
-# extract_estimates(models$model[[1]], models$focal_var[[1]])
+# extract_estimates(models$model[[7]], 
+#                   models$focal_var[[7]],
+#                   models$formula[[7]] == 'interaction')
 # extract_estimates(models$model[[20]], models$focal_var[[20]])
-# extract_estimates(models$model[[5]], models$focal_var[[5]])
+# extract_estimates(models$model[[5]], models$focal_var[[5]], TRUE)
 
-estimates = map2_dfr(models$model, models$focal_var, 
-                     extract_estimates, .id = 'model_idx') %>% 
+estimates = models %>% 
+    transmute(model, focal_var, formula == 'interaction') %>% 
+    pmap_dfr(~ extract_estimates(..1, ..2, ..3), 
+             .id = 'model_idx') %>% 
     ## Model metadata
     left_join(reg_form) %>% 
     ## Split hurdle models into 2 types
@@ -326,7 +337,7 @@ estimates = map2_dfr(models$model, models$focal_var,
                        exp(.) - 1, 
                        .))
 
-
+# estimates_plot(estimates)
 # estimates %>%
 #     filter(covar_group == 'instructor effects') %>%
 #     filter(!!!plot_filters) %>%
@@ -355,8 +366,8 @@ estimates_plots %>%
                         str_replace_all(covar_group, ' ', '_'), 
                         '.png')) %>% 
     # {walk(.$plot, ~print(.))}
-    {pwalk(list(.$plot, .$path, .$width, .$height),
-          ~ ggsave(filename = ..2, plot = ..1,
-                   width = ..3, height = ..4,
-                   scale = 1))}
+                        {pwalk(list(.$plot, .$path, .$width, .$height),
+                               ~ ggsave(filename = ..2, plot = ..1,
+                                        width = ..3, height = ..4,
+                                        scale = 1))}
 

@@ -42,7 +42,7 @@ estimates_plot = function(data) {
                group = model_idx)) +
         geom_rect(data = thresholds,
                   inherit.aes = FALSE,
-                  aes(xmin = 'M.White', xmax = 'F.Asian',
+                  aes(xmin = 'M.White', xmax = 'combined',
                       ymin = high, ymax = low,
                       alpha = level),
                   show.legend = FALSE) +
@@ -62,9 +62,12 @@ estimates_plot = function(data) {
         ylab('estimated effect') +
         scale_y_continuous(labels = scales::percent_format(), expand = expand_scale(mult = c(0, .05))) +
         scale_linetype_manual(guide = guide_legend(order = 1), 
-                              values = c('M' = 'dashed', 'F' = 'solid')) +
+                              values = c('M' = 'dotted', 'F' = 'dashed', 
+                                         'combined' = 'solid')) +
         scale_color_brewer(palette = 'Set1', guide = guide_legend(order = 2)) +
-        scale_shape_manual(name = 'model', guide = guide_legend(nrow = 2, byrow = TRUE, order = 3), 
+        scale_shape_manual(name = 'model', 
+                           guide = guide_legend(nrow = 2, byrow = TRUE, 
+                                                order = 3), 
                            values = c('lm' = 16, 'logistic' = 17, 'bias-reduced logistic' = 2, 
                                       'Poisson' = 23, 'hurdle count' = 15, 'hurdle zero' = 0)) +
         theme_bw() +

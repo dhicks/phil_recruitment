@@ -179,9 +179,14 @@ reg_form_df = map_depth(controls, 2, construct_form) %>%
     map_depth(2, bind_rows) %>% 
     map(bind_rows) %>% 
     bind_rows(.id = 'focal_var') %>% 
-    ## Add interaction term for variable of interest
-    mutate(reg_form = str_c(reg_form, str_c(focal_var, '*demographic'), 
+    ## Add variable of interest
+    mutate(full = str_c(reg_form, focal_var, sep = ' + '),
+           interaction = str_c(reg_form, 
+                                     str_c(focal_var, '*demographic'), 
                             sep = ' + ')) %>% 
+    select(-reg_form) %>% 
+    gather(key = formula, value = reg_form, 
+           full, interaction) %>% 
     ## Expand shorthand variables
     mutate(reg_form = expand_var(reg_form, 'class', 
                                  c('low_income', 'first_gen')), 

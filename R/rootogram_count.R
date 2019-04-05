@@ -1,12 +1,13 @@
 ## Rootogram for Poisson and NB models, plus zi and hurdle variants
 rootogram_count = function(model_list,
-                           model_names = NULL,
                            response, 
+                           model_names = NULL,
                            quoted = FALSE, 
                            new_data = NULL, 
                            sqrt_scale = TRUE,
                            breaks = c(5, 10, 50, 1e2, 5e2, 1e3, 5e3, 1e4), 
-                           minor_breaks = NULL) {
+                           minor_breaks = NULL
+                           ) {
     ## Wrapper to simplify passing a single model
     if (!inherits(model_list, 'list')) {
         model_list = list(model_list)

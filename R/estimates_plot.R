@@ -26,12 +26,14 @@ estimates_plot = function(data) {
         group_by(model_group) %>% 
         mutate(low = lead(high)) %>% 
         filter(level != 'left') %>% 
-        ungroup() %>% 
-        ## Stabilize order of model groups and levels
-        mutate(model_group = fct_inorder(model_group),
-               level = fct_rev(fct_inorder(level))) %>%  
-        ## Combine with the processes included in the data, for faceting
-        crossing(process = unique(data$process))
+        ## Construct grobs
+        mutate(fill = case_when(level == 'negligible' ~ 0.0, 
+                                level == 'moderate' ~ .1, 
+                                level == 'strong' ~ .2),
+            grob = pmap(list(low, high, fill),
+            ~ annotation_custom(grid::rectGrob(gp = grid::gpar(fill = 'black', 
+                                                   alpha = ..3)), 
+                                            ymin = ..1, ymax = ..2)))
     
     p = ggplot(data = data, 
            aes(x = term, y = estimate.comb,
@@ -44,25 +46,20 @@ estimates_plot = function(data) {
         geom_point(position = position_dodge(width = 1)) +
         facet_wrap(vars(process, model_group),
                dir = 'v',
-               scales = 'free_y',
+               scales = 'free_x',
                drop = FALSE,
-               nrow = n_distinct(estimates$model_group))
-        
-    yrange = map(ggplot_build(p)$layout$panel_scales_y, ~.$range$range)
-    return(yrange)
-    
-    p = p +
-        geom_rect(data = thresholds,
-                  inherit.aes = FALSE,
-                  aes(xmin = 'M.White', xmax = 'combined',
-                      ymin = high, ymax = low,
-                      alpha = level),
-                  show.legend = FALSE) +
-        scale_alpha_manual(values = c(0, .1, .2)) +
+               nrow = n_distinct(estimates$model_group)) + 
+        # geom_rect(data = thresholds,
+        #           inherit.aes = FALSE,
+        #           aes(xmin = 'M.White', xmax = 'combined',
+        #               ymin = high, ymax = low,
+        #               alpha = level),
+        #           show.legend = FALSE) +
+        # scale_alpha_manual(values = c(0, .1, .2)) +
         geom_hline(yintercept = 0,
                    # data = reg_form,
                    linetype = 'dashed') +
-        coord_flip(xlim = yrange) +
+        coord_flip() +
         xlab('') +
         ylab('estimated effect') +
         scale_y_continuous(labels = scales::percent_format(), expand = expand_scale(mult = c(0, .05))) +
@@ -79,5 +76,5 @@ estimates_plot = function(data) {
         theme(legend.position = 'bottom',
               legend.key.height = unit(2, 'lines'))
     
-    return(p)
+    return(p + thresholds$grob)
 }

@@ -138,6 +138,7 @@ test_df = dataf[test_rows,]
 construct_expr = function(model_type, 
                           reg_form, 
                           data_arg = 'data = train_df') {
+    ## Construct expressions (as strings) given the model type and regression formula
     ## To add a new model type:  
     ## 1. Add name/label to model_types
     ## 2. Add case to fn
@@ -172,6 +173,7 @@ construct_expr = function(model_type,
 
 # construct_expr('logistic', 'monkey + zoo')
 
+## Actually do the fitting
 ## ~125 sec
 ## NB brglmFit warnings are due to separation w/ instructor demographics
 tic()
@@ -338,12 +340,10 @@ estimates = models %>%
                        .))
 
 # estimates_plot(estimates)
-p = estimates %>%
+estimates %>%
     filter(covar_group == 'instructor effects') %>%
     filter(!!!plot_filters) %>%
     estimates_plot()
-
-p_meta = ggplot_build(p + coord_flip())
 
 estimates_plots = estimates %>% 
     filter(!!!plot_filters) %>% 

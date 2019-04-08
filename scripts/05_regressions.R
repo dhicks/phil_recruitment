@@ -3,8 +3,6 @@
 ## TODO:  
 ## - estimate extraction
 ##      - nice process/covar labels
-##      - think through effect size thresholds, plotting cutoffs
-##          - unconditional prob. of majoring is 6%
 ##      - legend width (curriculum, grade gap)
 ##      - curriculum drops logistic and br logistic models?  maybe try a drop = FALSE somewhere
 
@@ -313,12 +311,33 @@ ggsave(str_c(plots_folder, '05_rootograms.png'),
 # extract_estimates(models$model[[20]], models$focal_var[[20]])
 # extract_estimates(models$model[[5]], models$focal_var[[5]], TRUE)
 
+process_labels = tribble(
+    ~ process, ~ process_label, 
+    'admission_typeFreshman', 'freshman admission',
+    'course_divisionupper', 'upper-division course',
+    'first_genTRUE', 'first-generation student',
+    'low_incomeTRUE', 'low income student', 
+    'undeclared.studentTRUE', 'undeclared',
+    'dmg', 'group difference from mean grade gap',
+    'grade_diff', 'grade gap',
+    'gender.instructorF', 'woman vs. man instructor',
+    'race.instructorAsian', 'Asian vs. White instructor',
+    'race.instructorBlack', 'Black vs. White instructor',
+    'current_phil_share', 'current philosophy major share',
+    'log10(n_students)', 'course size',
+    'poc_share', 'POC student share',
+    'women_share', 'women student share'
+)
+
 estimates = models %>% 
     transmute(model, focal_var, formula == 'interaction') %>% 
     pmap_dfr(~ extract_estimates(..1, ..2, ..3), 
              .id = 'model_idx') %>% 
     ## Model metadata
     left_join(reg_form) %>% 
+    ## Nice labels
+    left_join(process_labels) %>%
+    mutate(process = process_label) %>% 
     ## Split hurdle models into 2 types
     mutate(model_type = ifelse(!is.na(hurdle_component),
                                paste(model_type, hurdle_component),

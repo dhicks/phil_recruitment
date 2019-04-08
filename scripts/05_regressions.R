@@ -340,10 +340,10 @@ estimates = models %>%
                        .))
 
 # estimates_plot(estimates)
-estimates %>%
-    filter(covar_group == 'instructor effects') %>%
-    filter(!!!plot_filters) %>%
-    estimates_plot()
+# estimates %>%
+#     filter(covar_group == 'instructor effects') %>%
+#     filter(!!!plot_filters) %>%
+#     estimates_plot()
 
 estimates_plots = estimates %>% 
     filter(!!!plot_filters) %>% 

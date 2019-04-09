@@ -41,18 +41,22 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                   undeclared.student ~ admission_type + course_division + other_major.student, 
                   admission_type ~ class,
                   philosophy_person ~ prior_perceptions + 
-                      classroom_culture + schema_clash + mentoring +
+                      classroom_culture + gender_race_schemas + mentoring +
+                      logic_systematic_abstract +
                       grade_diff + field_spec_ability,
                   field_spec_ability ~ classroom_culture + grade_diff + prior_perceptions + mentoring,
                   mentoring ~ instructor_demographics + bias, 
                   other_major.student ~ other_major_share,
                   other_major_share ~ course_division,
-                  schema_clash ~ classroom_culture + 
+                  gender_race_schemas ~ classroom_culture + 
                       prior_perceptions + 
-                      grade_diff + current_phil_share + 
+                      current_phil_share + 
                       peer_demographics +
-                      instructor_demographics +
-                      field_spec_ability,
+                      instructor_demographics,
+                  logic_systematic_abstract ~ classroom_culture + 
+                      prior_perceptions + 
+                      current_phil_share + peer_demographics + 
+                      instructor_demographics,  ## Cech, "Self-expressive edge of occupational sex segregation"
                   prior_perceptions ~ class, 
                   prev_phil_course ~ admission_type + class + 
                       undeclared.student, 
@@ -70,10 +74,10 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                       instructor_demographics + current_phil_share,
                   
                   latent = c('prev_phil_course', 'classroom_culture', 
-                             'field_spec_ability',
+                             'field_spec_ability', 'logic_systematic_abstract',
                              'practical_major', 'prior_perceptions', 
                              'philosophy_person', 'mentoring', 
-                             'schema_clash', 'bias'),
+                             'gender_race_schemas', 'bias'),
                   outcome = 'outcome')
 
 

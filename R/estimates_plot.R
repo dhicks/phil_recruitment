@@ -87,9 +87,11 @@ estimates_plot = function(data) {
                            guide = guide_legend(nrow = 2, byrow = TRUE,
                                                 order = 3),
                            values = c('lm' = 16, 'logistic' = 17, 'bias-reduced logistic' = 2,
-                                      'Poisson' = 23, 'hurdle count' = 15, 'hurdle zero' = 0)) +
+                                      'Poisson' = 23, 'hurdle count' = 15, 'hurdle zero' = 0), 
+                           drop = FALSE) +
         theme_bw() +
         theme(legend.position = 'bottom',
+              legend.box = 'vertical', legend.box.just = 'left',
               legend.key.height = unit(2, 'lines'))
     
     return(p + thresholds$grob)

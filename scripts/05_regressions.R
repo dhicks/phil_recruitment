@@ -1,11 +1,4 @@
 # This script generates the regression models, as well as ROC plots and rootograms to assess goodness-of-fit
-
-## TODO:  
-## - estimate extraction
-##      - nice process/covar labels
-##      - legend width (curriculum, grade gap)
-##      - curriculum drops logistic and br logistic models?  maybe try a drop = FALSE somewhere
-
 library(tidyverse)
 
 # library(lme4)
@@ -359,10 +352,10 @@ estimates = models %>%
                        .))
 
 # estimates_plot(estimates)
-# estimates %>%
-#     filter(covar_group == 'instructor effects') %>%
-#     filter(!!!plot_filters) %>%
-#     estimates_plot()
+estimates %>%
+    filter(covar_group == 'curriculum') %>%
+    filter(!!!plot_filters) %>%
+    estimates_plot()
 
 estimates_plots = estimates %>% 
     filter(!!!plot_filters) %>% 
@@ -381,7 +374,7 @@ estimates_plots %>%
     mutate(n_processes = map_int(data, ~n_distinct(.$process)), 
            n_model_groups = map_int(data, ~n_distinct(.$model_group)), 
            width = 3*pmax(n_processes, 1.5),
-           height = 3*n_model_groups + 3*1/3) %>% 
+           height = 3*n_model_groups + 3*1/2) %>% 
     mutate(path = str_c(plots_folder, 
                         '05_',
                         str_replace_all(covar_group, ' ', '_'), 

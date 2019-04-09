@@ -139,6 +139,60 @@ controls
 assert_that(all(map_int(controls, length) > 0))
 
 
+
+## Table of controls ----
+controls %>% 
+    ## Replace empty lists with NAs
+    modify_depth(2, 
+                 ~ if (is_empty(.)) {
+                     return(NA_character_)
+                 } else {
+                     return(.)
+                 }) %>% 
+    ## `bind_rows()` throws warnings when it doesn't recognize a column class
+    quietly(map_dfr)(~ tibble(controls = .), .id = 'process') %>% 
+    .$result %>% 
+    mutate(model_idx = row_number()) %>%
+    ## Unpack and arrange
+    unnest(controls) %>% 
+    mutate(t = TRUE) %>% 
+    spread(key = controls, value = t, fill = FALSE) %>% 
+    select(process, everything(), -model_idx, -`<NA>`) %>% 
+    arrange(process) %>% 
+    ## Generic controls
+    mutate(year = TRUE, 
+           quarter = TRUE, 
+           instructor.log_total = TRUE) %>% 
+    ## Generate table
+    mutate_at(vars(admission_type:instructor.log_total), 
+              ~ifelse(., 'X', '')) %>% 
+    mutate(process = str_replace_all(process, '_', ' '), 
+           process = case_when(process == 'current phil share' ~ 'current phil. share', 
+                               process == 'dmg' ~ 'GDMGG', 
+                               process == 'grade diff' ~ 'grade gap',
+                               process == 'instructor demographics' ~ 'inst. demographics', 
+                               process == 'n students' ~ 'course size', 
+                               process == 'undeclared.student' ~ 'undeclared', 
+                               TRUE ~ process)) %>% 
+    knitr::kable(format = 'markdown',
+                 align = 'lccccccccccc', 
+                 col.names = c('', 
+                               'admission type', 
+                               'class', 
+                               'course division', 
+                               'current phil. share', 
+                               'GDMGG', 
+                               'inst. demographics', 
+                               'soc., bio., hum. dev.',
+                               'undeclared', 
+                               'year', 
+                               'quarter', 
+                               'inst. total students'), 
+                 caption = 'Control variables used for each variable of interest.  Grade gap has two sets of control variables.  All control variables shown here were used in both major and later philosophy course models.  Later philosophy course models also included as a control whether the student ever majored in philosophy.\ref{tab.controls}') %>% 
+    write_lines(str_c(plots_folder, '04_controls.md'))
+
+
+
 ## Construct formulas ----
 ## Strictly speaking, this constructs the RHS
 construct_form = function(covars, other_vars = general_controls) {

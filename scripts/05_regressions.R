@@ -84,7 +84,7 @@ model_types = tribble(
     ~ outcome, ~ model_type,
     'ever_phil', 'lm', 
     'ever_phil', 'logistic', 
-    'ever_phil', 'bias-reduced logistic', 
+    # 'ever_phil', 'bias-reduced logistic', 
     'n_later_phil', 'Poisson', 
     'n_later_phil', 'hurdle'
 )
@@ -165,7 +165,7 @@ construct_expr = function(model_type,
 # construct_expr('logistic', 'monkey + zoo')
 
 ## Actually do the fitting
-## ~125 sec
+## ~70 sec w/o br logistic models
 ## NB brglmFit warnings are due to separation w/ instructor demographics
 tic()
 models = reg_form %>% 

@@ -37,41 +37,45 @@ general_controls = c('year', 'quarter', ## seasonal and long-term trends
 phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                       other_major.student +
                       philosophy_person + mentoring, 
-                  practical_major ~ class, 
-                  undeclared.student ~ admission_type + course_division + other_major.student, 
+                  
                   admission_type ~ class,
-                  philosophy_person ~ prior_perceptions + 
-                      classroom_culture + gender_race_schemas + mentoring +
-                      logic_systematic_abstract +
-                      grade_diff + field_spec_ability,
-                  field_spec_ability ~ classroom_culture + grade_diff + prior_perceptions + mentoring,
-                  mentoring ~ instructor_demographics + bias, 
-                  other_major.student ~ other_major_share,
-                  other_major_share ~ course_division,
-                  gender_race_schemas ~ classroom_culture + 
-                      prior_perceptions + 
-                      current_phil_share + 
-                      peer_demographics +
-                      instructor_demographics,
-                  logic_systematic_abstract ~ classroom_culture + 
-                      prior_perceptions + 
-                      current_phil_share + peer_demographics + 
-                      instructor_demographics,  ## Cech, "Self-expressive edge of occupational sex segregation"
-                  prior_perceptions ~ class, 
-                  prev_phil_course ~ admission_type + class + 
-                      undeclared.student, 
                   bias ~ dmg + instructor_demographics, 
                   classroom_culture ~ bias + n_students + mean_grade +
                       current_phil_share + other_major_share + 
                       peer_demographics + instructor_demographics +
                       course_division,
-                  n_students ~ course_division,
-                  grade_diff ~ dmg + prev_phil_course, 
+                  course_division ~ admission_type,
                   current_phil_share ~ course_division,
-                  peer_demographics ~ current_phil_share + 
+                  dmg ~ instructor_demographics,
+                  field_spec_ability ~ classroom_culture + grade_diff + prior_perceptions + mentoring,
+                  gender_race_schemas ~ classroom_culture + 
+                      prior_perceptions + 
+                      current_phil_share + 
+                      peer_demographics +
                       instructor_demographics,
+                  grade_diff ~ dmg + prev_phil_course, 
+                  instructor_demographics ~ course_division,
+                  logic_systematic_abstract ~ classroom_culture + 
+                      prior_perceptions + 
+                      current_phil_share + peer_demographics + 
+                      instructor_demographics,  ## Cech, "Self-expressive edge of occupational sex segregation"
                   mean_grade ~ bias + peer_demographics + 
                       instructor_demographics + current_phil_share,
+                  mentoring ~ instructor_demographics + bias, 
+                  n_students ~ course_division,
+                  other_major.student ~ other_major_share,
+                  other_major_share ~ course_division,
+                  practical_major ~ class, 
+                  undeclared.student ~ admission_type + course_division + other_major.student, 
+                  peer_demographics ~ current_phil_share + 
+                      instructor_demographics,
+                  philosophy_person ~ prior_perceptions + 
+                      classroom_culture + gender_race_schemas + mentoring +
+                      logic_systematic_abstract +
+                      grade_diff + field_spec_ability,
+                  prev_phil_course ~ admission_type + class + 
+                      undeclared.student, 
+                  prior_perceptions ~ class, 
                   
                   latent = c('prev_phil_course', 'classroom_culture', 
                              'field_spec_ability', 'logic_systematic_abstract',

@@ -33,7 +33,10 @@ plots_folder = '../plots/'
 
 test_share = .25 ## fraction of observations in test set
 
-plot_filters = quos(ci.high < 4, is.finite(se.comb)) ## used to filter plot-breaking values before generating effects estimates plots
+## Used to filter estimates before plotting
+plot_filters = quos(ci.high < 4, is.finite(se.comb), ## uninformative estimates
+                    model_type != 'bias-reduced logistic' ## these turn out to be basically the same as standard logistic
+                    )
 
 
 ## Load data ----
@@ -84,7 +87,7 @@ model_types = tribble(
     ~ outcome, ~ model_type,
     'ever_phil', 'lm', 
     'ever_phil', 'logistic', 
-    # 'ever_phil', 'bias-reduced logistic', 
+    'ever_phil', 'bias-reduced logistic',
     'n_later_phil', 'Poisson', 
     'n_later_phil', 'hurdle'
 )
@@ -98,6 +101,7 @@ covar_groups = tribble(
     'undeclared.student', 'student background',
     'dmg', 'grade gap',
     'grade_diff', 'grade gap',
+    'instructor.log_total', 'instructor effects',
     'gender.instructor', 'instructor effects',
     'race.instructor', 'instructor effects',
     'current_phil_share', 'peer effects',
@@ -109,7 +113,8 @@ covar_groups = tribble(
 reg_form = read_rds(str_c(insecure_data_folder, '04_reg_form.Rds')) %>% 
     left_join(model_types) %>% 
     left_join(covar_groups, by = c('focal_var' = 'covar')) %>% 
-    # slice(1:6, 85:88) %>% 
+    # slice(1:2) %>%
+    # filter(focal_var == 'instructor.log_total') %>% 
     mutate(model_idx = as.character(row_number()))
 
 
@@ -165,7 +170,7 @@ construct_expr = function(model_type,
 # construct_expr('logistic', 'monkey + zoo')
 
 ## Actually do the fitting
-## ~70 sec w/o br logistic models
+## Takes a couple minutes
 ## NB brglmFit warnings are due to separation w/ instructor demographics
 tic()
 models = reg_form %>% 
@@ -314,6 +319,7 @@ process_labels = tribble(
     'dmg', 'group difference from mean grade gap',
     'grade_diff', 'grade gap',
     'gender.instructorF', 'woman vs. man instructor',
+    'instructor.log_total', 'instructor total students',
     'race.instructorAsian', 'Asian vs. White instructor',
     'race.instructorBlack', 'Black vs. White instructor',
     'current_phil_share', 'current philosophy major share',
@@ -352,10 +358,10 @@ estimates = models %>%
                        .))
 
 # estimates_plot(estimates)
-estimates %>%
-    filter(covar_group == 'curriculum') %>%
-    filter(!!!plot_filters) %>%
-    estimates_plot()
+# estimates %>%
+#     filter(covar_group == 'curriculum') %>%
+#     filter(!!!plot_filters) %>%
+#     estimates_plot()
 
 estimates_plots = estimates %>% 
     filter(!!!plot_filters) %>% 

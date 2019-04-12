@@ -26,12 +26,13 @@ vars = c('class', 'admission_type', 'undeclared.student',
          'grade_diff', 'dmg', 
          'peer_demographics', 'current_phil_share', 
          'n_students', 'course_division',
-         'instructor_demographics')
+         'instructor_demographics', 
+         'instructor.log_total')  ## proxy for instructor seniority
 names(vars) = vars
 
 ## General controls
-general_controls = c('year', 'quarter', ## seasonal and long-term trends
-                     'instructor.log_total')  ## proxy for instructor seniority
+general_controls = c('year', 'quarter' ## seasonal and long-term trends
+)  
 
 ## Define DAG ----
 phil_dag = dagify(outcome ~ practical_major + undeclared.student +
@@ -39,14 +40,14 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                       philosophy_person + mentoring, 
                   
                   admission_type ~ class,
-                  bias ~ dmg + instructor_demographics, 
+                  bias ~ dmg + instructor.log_total + instructor_demographics, 
                   classroom_culture ~ bias + n_students + mean_grade +
                       current_phil_share + other_major_share + 
                       peer_demographics + instructor_demographics +
-                      course_division,
+                      course_division + instructor.log_total,
                   course_division ~ admission_type,
                   current_phil_share ~ course_division,
-                  dmg ~ instructor_demographics,
+                  dmg ~ instructor_demographics + instructor.log_total,
                   field_spec_ability ~ classroom_culture + grade_diff + prior_perceptions + mentoring,
                   gender_race_schemas ~ classroom_culture + 
                       prior_perceptions + 
@@ -54,17 +55,19 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                       peer_demographics +
                       instructor_demographics,
                   grade_diff ~ dmg + prev_phil_course, 
-                  instructor_demographics ~ course_division,
+                  instructor.log_total ~ course_division,
+                  instructor_demographics ~ instructor.log_total,
                   logic_systematic_abstract ~ classroom_culture + 
                       prior_perceptions + 
                       current_phil_share + peer_demographics + 
                       instructor_demographics,  ## Cech, "Self-expressive edge of occupational sex segregation"
                   mean_grade ~ bias + peer_demographics + 
-                      instructor_demographics + current_phil_share,
-                  mentoring ~ instructor_demographics + bias, 
-                  n_students ~ course_division,
+                      instructor_demographics + current_phil_share +
+                      instructor.log_total,
+                  mentoring ~ instructor_demographics + bias + instructor.log_total, 
+                  n_students ~ course_division + instructor.log_total,
                   other_major.student ~ other_major_share,
-                  other_major_share ~ course_division,
+                  other_major_share ~ course_division + instructor.log_total,
                   practical_major ~ class, 
                   undeclared.student ~ admission_type + course_division + other_major.student, 
                   peer_demographics ~ current_phil_share + 
@@ -83,6 +86,21 @@ phil_dag = dagify(outcome ~ practical_major + undeclared.student +
                              'philosophy_person', 'mentoring', 
                              'gender_race_schemas', 'bias'),
                   outcome = 'outcome')
+
+var_labels = tribble(
+    ~ name, ~ label,
+    'current_phil_share', 'current majors', 
+    'dmg', 'GDMGG', 
+    'field_spec_ability', 'field spec. ability',
+    'grade_diff', 'grade gap', 
+    'instructor.log_total', 'inst. tot. students',
+    'logic_systematic_abstract', 'L-S-A identity', 
+    'n_students', 'class size', 
+    'soc.-bio.-hum. dev.', 'other_major.student',
+    'soc.-bio.-hum. dev. share', 'other_major_share', 
+    'undeclared.student', 'undeclared', 
+    'prev_phil_course', 'prev. phil. course'
+)
 
 
 ## Visualize ----
@@ -118,7 +136,10 @@ layout = agread(str_c(data_folder, dotfile)) %>%
 
 phil_dag %>% 
     as_tbl_graph() %>% 
-    mutate(var_type = case_when(name == 'outcome' ~ 'outcome', 
+    left_join(var_labels) %>% 
+    mutate(label = case_when(!is.na(label) ~ label, 
+                             TRUE ~ str_replace_all(name, '_', ' ')), 
+           var_type = case_when(name == 'outcome' ~ 'outcome', 
                                 name %in% vars ~ 'variable of interest', 
                                 name %in% latents(phil_dag) ~ 'unmeasured', 
                                 name %in% c('mean_grade', 
@@ -126,7 +147,7 @@ phil_dag %>%
                                             'other_major.student') ~ 'measured control',
                                 TRUE ~ 'error')) %>% 
     ggraph(layout = 'manual', node.positions = layout) +
-    geom_node_label(aes(label = name, fill = var_type), 
+    geom_node_label(aes(label = label, fill = var_type), 
                     color = 'white') +
     geom_edge_link(arrow = arrow(angle = 10, length = unit(3, 'mm')),
                    aes(start_cap = circle(5, 'mm'),
@@ -244,8 +265,8 @@ reg_form_df = map_depth(controls, 2, construct_form) %>%
     ## Add variable of interest
     mutate(full = str_c(reg_form, focal_var, sep = ' + '),
            interaction = str_c(reg_form, 
-                                     str_c(focal_var, '*demographic'), 
-                            sep = ' + ')) %>% 
+                               str_c(focal_var, '*demographic'), 
+                               sep = ' + ')) %>% 
     select(-reg_form) %>% 
     gather(key = formula, value = reg_form, 
            full, interaction) %>% 

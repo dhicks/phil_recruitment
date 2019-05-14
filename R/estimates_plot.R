@@ -1,4 +1,4 @@
-estimates_plot = function(data) {
+estimates_plot = function(data, shade_background = TRUE) {
     annotation_custom2 <- function (grob, xmin = -Inf, xmax = Inf, ymin = -Inf, ymax = Inf, data) 
     {
         layer(data = data, stat = StatIdentity, position = PositionIdentity, 
@@ -8,6 +8,7 @@ estimates_plot = function(data) {
                                                  ymin = ymin, ymax = ymax))
     }
     
+    if (shade_background) {
     thresholds = tribble(
         ~model_group, ~level, ~high,
         'linear', 'strong', Inf, 
@@ -31,6 +32,7 @@ estimates_plot = function(data) {
         'count', 'strong', 1/2 - 1, 
         'count', 'left', 0 - 1
     ) %>% 
+        filter(model_group %in% data$model_group) %>% 
         ## Lead thresholds to get low/left-hand endpoints
         group_by(model_group) %>% 
         mutate(low = lead(high)) %>% 
@@ -50,6 +52,7 @@ estimates_plot = function(data) {
                                                 xmin = -Inf, xmax = Inf,
                                                 ymin = ..1, ymax = ..2, 
                                                 data = tibble(model_group = ..4, process = ..5))))
+    }
     
     p = ggplot(data = data, 
                aes(x = term, y = estimate.comb,
@@ -64,7 +67,7 @@ estimates_plot = function(data) {
                    dir = 'v',
                    scales = 'free_x',
                    drop = FALSE,
-                   nrow = n_distinct(estimates$model_group)) +
+                   nrow = n_distinct(data$model_group)) +
         # geom_rect(data = thresholds,
         #           inherit.aes = FALSE,
         #           aes(xmin = 'M.White', xmax = 'combined',
@@ -94,5 +97,9 @@ estimates_plot = function(data) {
               legend.box = 'vertical', legend.box.just = 'left',
               legend.key.height = unit(2, 'lines'))
     
-    return(p + thresholds$grob)
+    if (shade_background) {
+        return(p + thresholds$grob)
+    } else {
+        return(p)
+    }
 }

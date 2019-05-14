@@ -371,6 +371,95 @@ estimates_plots = estimates %>%
                            ggtitle(str_to_title(.y), 
                                    subtitle = Sys.time())))
 
+## A focused plot for the flashtalk
+models %>% 
+    filter(focal_var %in% c('course_division', 'admission_type', 
+                            'current_phil_share', 'poc_share', 
+                            'women_share'),
+           formula == 'full', 
+           model_type == 'lm') %>% 
+    mutate(estimates = map(model, tidy)) %>% 
+    unnest(estimates) %>% 
+    filter(str_detect(term, focal_var)) %>% 
+    ## Need to reverse admission_type
+    mutate(estimate = ifelse(focal_var == 'admission_type', 
+                             -estimate, 
+                             estimate)) %>% 
+    mutate(ci.low = estimate + qnorm(.025)*std.error, 
+           ci.high = estimate + qnorm(.975)*std.error) %>% 
+    ggplot(aes(fct_reorder(focal_var, ci.high), 
+               estimate, ymin = ci.low, ymax = ci.high, 
+               color = focal_var)) +
+    geom_pointrange(show.legend = FALSE) +
+    geom_hline(yintercept = 0, linetype = 'solid', alpha = .5) +
+    # geom_hline(yintercept = 0.0562, linetype = 'dashed') +
+    # annotate('text', y = .0562 + .01, x = 1-.25, 
+    #          label = 'baseline\nchance', 
+    #          size = 2) +
+    scale_x_discrete(labels = function(x) str_replace_all(x, '_', ' '), 
+                     name = '') +
+    scale_y_continuous(labels = scales::percent_format(accuracy = 1, 
+                                                       prefix = '+'), 
+                       name = 'Chance of majoring', 
+                       minor_breaks = NULL) +
+    scale_color_brewer(palette = 'Set1') +
+    coord_flip() +
+    theme_minimal()
+
+ggsave(str_c(plots_folder, '05_highlights.png'), 
+       height = 3, width = 6, 
+       scale = .8)
+
+## Illustrating the intersectional approach
+estimates %>% 
+    filter(focal_var == 'course_division',
+           model_type == 'lm') %>% 
+    mutate(model_group = fct_drop(model_group), 
+           process = fct_drop(process)) %>% 
+    estimates_plot(shade_background = FALSE) +
+    scale_shape(guide = FALSE) +
+    scale_color_brewer(palette = 'Set1', guide = FALSE) +
+    scale_linetype(guide = FALSE)
+    
+ggsave(str_c(plots_folder, '05_intersectionality.png'), 
+       height = 3, width = 6, scale = .8)
+
+## Instructor demographics plots for the flashtalk
+instructor_gender_plot = ggplot(dataf, aes(gender.instructor)) +
+    geom_bar(aes(fill = gender.instructor), 
+             show.legend = FALSE) +
+    geom_text(data = faculty_df, 
+              stat = 'count', 
+              aes(x = gender, label = ..count..), 
+              y = -500) +
+    scale_x_discrete(name = 'instructor gender', 
+                     limits = c('M', 'F')) +
+    scale_y_continuous(expand = c(.1, .05), 
+                       name = 'total students taught') +
+    scale_fill_brewer(palette = 'Set1')
+
+instructor_race_plot = ggplot(dataf, aes(race.instructor)) +
+    geom_bar(aes(fill = race.instructor)) +
+    geom_text(data = faculty_df, #inherit.aes = FALSE,
+              stat = 'count',
+              aes(x = race, label = ..count..),
+              y = -500,
+              # position = position_nudge(y = 500)
+    ) +
+    scale_x_discrete(name = 'instructor race', 
+                     limits = c('White', 'Asian', 'Black')) +
+    scale_y_continuous(expand = c(.1, .05), 
+                       name = 'total students taught') +
+    scale_fill_viridis_d(guide = FALSE)
+
+plot_grid(instructor_gender_plot, 
+          instructor_race_plot)
+
+ggsave(str_c(plots_folder, '05_instructor_demos.png'), 
+       height = 3, width = 6, scale = 1)
+
+
+
 ## Output ----
 write_rds(estimates, str_c(insecure_data_folder, '05_estimates.Rds'))
 write_rds(estimates_plots, str_c(insecure_data_folder, '05_estimates_plots.Rds'))

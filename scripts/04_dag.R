@@ -163,7 +163,8 @@ ggsave(str_c(plots_folder, '04_dag.png'),
 
 
 ## Construct control sets ----
-controls = map(vars, ~adjustmentSets(phil_dag, exposure = .))
+controls = map(vars, ~adjustmentSets(phil_dag, exposure = ., 
+                                     type = 'canonical'))
 controls
 assert_that(all(map_int(controls, length) > 0))
 
@@ -193,7 +194,7 @@ controls %>%
            quarter = TRUE, 
            instructor.log_total = TRUE) %>% 
     ## Generate table
-    mutate_at(vars(admission_type:instructor.log_total), 
+    mutate_if(is.logical, 
               ~ifelse(., 'X', '')) %>% 
     mutate(process = str_replace_all(process, '_', ' '), 
            process = case_when(process == 'current phil share' ~ 'current phil. share', 
@@ -204,19 +205,24 @@ controls %>%
                                process == 'undeclared.student' ~ 'undeclared', 
                                TRUE ~ process)) %>% 
     knitr::kable(format = 'markdown',
-                 align = 'lccccccccccc', 
+                 align = 'lccccccccccccccccccccccccccccccc', 
                  col.names = c('', 
                                'admission type', 
                                'class', 
                                'course division', 
                                'current phil. share', 
                                'GDMGG', 
+                               'grade gap',
                                'inst. demographics', 
+                               'inst. total students',
+                               'mean grade',
+                               'course size',
+                               'soc., bio., hum. dev. share',
                                'soc., bio., hum. dev.',
+                               'peer demographics',
                                'undeclared', 
                                'year', 
-                               'quarter', 
-                               'inst. total students'), 
+                               'quarter'), 
                  caption = 'Control variables used for each variable of interest.  Grade gap has two sets of control variables.  All control variables shown here were used in both major and later philosophy course models.  Later philosophy course models also included as a control whether the student ever majored in philosophy.\ref{tab.controls}') %>% 
     write_lines(str_c(plots_folder, '04_controls.md'))
 
